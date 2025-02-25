@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="logo/logo.png" alt="Rogue Logo" width="400"/>
+</p>
+
 # Rogue 🎯
 > An intelligent web vulnerability scanner powered by Large Language Models
 
