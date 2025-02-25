@@ -3,12 +3,12 @@
 </p>
 
 # Rogue 🎯
-> An intelligent web vulnerability scanner powered by Large Language Models
+> An intelligent web vulnerability scanner agent powered by Large Language Models
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL%203.0-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 
-Rogue is an advanced security testing tool that leverages Large Language Models to intelligently discover and validate web application vulnerabilities. Unlike traditional scanners that follow predefined patterns, Rogue thinks like a human penetration tester - analyzing application behavior, generating sophisticated test cases, and validating findings.
+Rogue is an advanced AI security testing agent that leverages Large Language Models to intelligently discover and validate web application vulnerabilities. Unlike traditional scanners that follow predefined patterns, Rogue thinks like a human penetration tester - analyzing application behavior, generating sophisticated test cases, and validating findings through autonomous decision making.
 
 ## 🌟 Key Features
 
