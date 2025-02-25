@@ -96,6 +96,20 @@ Reports are generated in both text and markdown formats, containing:
 - Follow security testing best practices
 - Be mindful of potential impact on target systems
 
+## 📋 TODOs
+
+- [ ] Add support for Anthropic Claude models
+- [ ] Integrate vision API capabilities for visual analysis
+- [ ] Run against HackerOne reports to find first LLM-powered vulnerability in the wild
+- [ ] Implement more sophisticated planning algorithms
+- [ ] Add better execution strategies and error handling
+- [ ] Support for custom LLM model deployment
+- [ ] Add collaborative testing capabilities
+- [ ] Improve subdomain enumeration techniques
+- [ ] Add API security testing capabilities
+- [x] ~~Add basic documentation and examples~~
+
+
 ## 🤝 Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.
