@@ -10,6 +10,8 @@
 
 Rogue is an advanced AI security testing agent that leverages Large Language Models to intelligently discover and validate web application vulnerabilities. Unlike traditional scanners that follow predefined patterns, Rogue thinks like a human penetration tester - analyzing application behavior, generating sophisticated test cases, and validating findings through autonomous decision making.
 
+Note: This is a very early release with many planned improvements and features still in development. Open source contributions are most welcome.
+
 <p align="center">
   <img src="logo/demo.gif" alt="Demo GIF"/>
 </p>
