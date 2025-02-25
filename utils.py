@@ -30,7 +30,7 @@ def enumerate_subdomains(url: str) -> list:
         
     Returns:
         list: List of valid subdomain URLs that returned HTTP 200
-    """
+    """ 
     # Extract the root domain from the URL
     parsed = urlparse(url)
     hostname = parsed.netloc
