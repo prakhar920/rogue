@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="logo/logo.png" alt="Rogue Logo" width="300"/>
+  <img src="logo/logo.png" alt="Rogue Logo" width="200"/>
 </p>
 
 # Rogue 🎯
