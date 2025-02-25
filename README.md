@@ -1,7 +1,7 @@
 # Rogue 🎯
 > An intelligent web vulnerability scanner powered by Large Language Models
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: GPL-3.0](https://img.shields.io/badge/License-GPL%203.0-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 
 Rogue is an advanced security testing tool that leverages Large Language Models to intelligently discover and validate web application vulnerabilities. Unlike traditional scanners that follow predefined patterns, Rogue thinks like a human penetration tester - analyzing application behavior, generating sophisticated test cases, and validating findings.
@@ -100,7 +100,7 @@ Contributions are welcome! Please feel free to submit a Pull Request. For major 
 
 ## 📝 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the GPL3 - see the [LICENSE](LICENSE) file for details.
 
 ## ⚠️ Disclaimer
 
@@ -116,7 +116,7 @@ This tool is intended for security professionals and researchers. Always obtain 
 
 For questions, feedback, or issues, please:
 - Open an issue in this repository
-- Contact the maintainers at [your-email@example.com]
+- Contact the maintainers at [faizann288@gmail.com]
 
 ---
-Made with ❤️ by [Your Name/Organization]
+Made with ❤️ by Faizan
