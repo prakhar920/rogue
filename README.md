@@ -54,7 +54,7 @@ export OPENAI_API_KEY='your-api-key-here'
 python run.py -u https://example.com
 
 # Advanced scan with subdomain enumeration and URL discovery
-python run.py -u https://example.com -e -s -m o3-preview -i 10
+python run.py -u https://example.com -e -s -m o3-mini -i 10
 ```
 
 ## 🛠️ Command Line Options
