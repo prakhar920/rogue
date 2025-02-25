@@ -35,7 +35,7 @@ class Tools:
         Returns:
             Page HTML after click
         """
-        page.click(css_selector)
+        page.click(css_selector, timeout=5000)
         return page.inner_html("html")
 
     def fill(self, page, css_selector: str, value: str) -> str:
@@ -49,7 +49,7 @@ class Tools:
         Returns:
             Page HTML after filling
         """
-        page.fill(css_selector, value)
+        page.fill(css_selector, value, timeout=5000)
         return page.inner_html("html")
 
     def submit(self, page, css_selector: str) -> str:
@@ -188,6 +188,9 @@ class Tools:
                     - Since you are given the request and the response data, if you want to fuzz the API endpoint, you can simply pass in the modified request data and replay the request. Only do this if you are already seeing requests data in some recent conversation.
                     - Remember: when running page.evaluate, we need to return some variable from the js code instead of doing console logs. Otherwise, we can't access it back in python. The backend for analysis is all python.
                     - Playwright uses async functions, just remember that. You know how its evaluate function works, so write code accordingly.
+                    - * Important: Our code writing agent often writes very bad code that results in illegal return statements, and other syntax errors around await, async. You should know that we are using playwright.evaluate inside python to evaluate the js code. If you see any errors, fix them before returning the code.
+                        - Error often look like execute_js(page, "return _refreshHome('<img src=x onerror=alert(1)>');")
+                            Error executing tool: Page.evaluate: SyntaxError: Illegal return statemen
             - click(css_selector)
                 If you want to click on a button or link, you can simply pass in the css selector of the element you want to click on.
             - fill(css_selector, value)

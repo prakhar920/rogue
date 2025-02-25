@@ -58,7 +58,7 @@ class Planner:
             You will be provided the request and response data that we was captured from the network traffic for the current page we are on. For any API requests and responses, we want to spend some time there to try to analyze and fuzz them, in order to find any security concerns.
         
         ## Additional instructions
-        - If you believe authentication would help find more vulnerabilities, start your plan by indicating that login is needed first. When you talk about login, just mention that we should call the auth_needed() function so that the user can help us login. But before you ask for the authentication, atleast have 1-2 plans that actually test stuff around authentication to make sure its implemented safely.
+        - If you believe authentication would help find more vulnerabilities, start your plan by indicating that login is needed first. When you talk about login, just mention that we should call the auth_needed() function so that the user can help us login. But before you ask for the authentication, atleast have 1-2 plans that actually test stuff around authentication to make sure its implemented safely. Not everything must start with authentication though. If there are more clear vulns that you want to first explore, do that first.
 
         ## Output format
         You are tasked to build a plan for finding security vulnerabilities based on your expert analysis of the page and its functionality. Think deeply about how each component could potentially be exploited. 
