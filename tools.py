@@ -1,4 +1,5 @@
 import sys
+import re
 from io import StringIO
 from llm import LLM
 
@@ -24,6 +25,8 @@ class Tools:
         self.security_actions_performed = 0
         self.min_actions_required = 3  # Minimum security actions required before completion
         self.first_navigation = False
+        # Initialize the page object storage
+        self.current_page = None
         
     def execute_js(self, page, js_code: str) -> str:
         """Execute JavaScript code on the page.
@@ -323,9 +326,224 @@ class Tools:
             Result of tool execution or error message
         """
         try:
-            return eval("self." + tool_use)
+            # Store the page object for this execution
+            self.current_page = page
+            
+            # Parse the command instead of using direct eval
+            command_match = re.match(r'(\w+)\s*\((.*)\)', tool_use)
+            if not command_match:
+                return f"Error executing tool: Invalid command format: {tool_use}"
+                
+            func_name = command_match.group(1)
+            args_str = command_match.group(2)
+            
+            # Validate that the function exists
+            if not hasattr(self, func_name):
+                return f"Error executing tool: Unknown function: {func_name}"
+            
+            # Get the function object
+            func = getattr(self, func_name)
+            
+            # Special case for functions that need page object
+            page_required = func_name in ['goto', 'click', 'fill', 'submit', 'execute_js', 'refresh', 'presskey']
+            
+            # Parse arguments safely
+            if not args_str:
+                # No arguments
+                return func()
+            elif page_required and not args_str.startswith('page'):
+                # Add page as first argument if needed
+                modified_args_str = f"page, {args_str}"
+                # Execute with safe argument parsing
+                return self._execute_with_args(func, modified_args_str)
+            else:
+                # Execute with existing arguments
+                return self._execute_with_args(func, args_str)
+                
         except Exception as e:
             return f"Error executing tool: {str(e)}"
+            
+    def _execute_with_args(self, func, args_str):
+        """Execute a function with parsed arguments.
+        
+        Args:
+            func: Function to execute
+            args_str: String containing argument values
+            
+        Returns:
+            Result of function execution
+        """
+        import re
+        
+        # Parse the arguments string safely
+        args = []
+        kwargs = {}
+        
+        # Handle empty args
+        if not args_str.strip():
+            return func()
+            
+        # Special handling for quotes in arguments to prevent syntax errors
+        # First, handle the page argument if it exists
+        if args_str.startswith('page'):
+            # Use the stored current_page instead of assuming global 'page' variable
+            if self.current_page is None:
+                raise ValueError("Page object not available. Make sure page is passed to execute_tool first.")
+            args.append(self.current_page)
+            # Remove the page argument and any following comma
+            args_str = re.sub(r'^page\s*,\s*', '', args_str)
+        
+        # Special handling for known security tools with XSS payloads
+        # If this is a fill command with a potential XSS payload, use a more robust parsing approach
+        is_fill_with_xss = func.__name__ == 'fill' and ('<script>' in args_str or 'alert(' in args_str)
+        
+        if is_fill_with_xss and args_str.count(',') >= 1:
+            # For fill commands with XSS payloads, use a more specialized parsing approach
+            try:
+                # First, extract the selector (everything up to the first comma)
+                first_comma_idx = self._find_safe_comma_position(args_str)
+                if first_comma_idx == -1:
+                    # Fallback if we can't find a safe comma
+                    raise ValueError("Cannot parse arguments for fill command")
+                    
+                selector = args_str[:first_comma_idx].strip()
+                value = args_str[first_comma_idx + 1:].strip()
+                
+                # Parse the selector and value
+                args.append(self._parse_arg_value(selector))
+                args.append(self._parse_arg_value(value))
+                
+                if self.debug:
+                    print(f"XSS payload detected. Parsed args: selector='{args[0]}', value='{args[1]}'")
+                
+                # Execute with the parsed arguments
+                return func(*args)
+            except Exception as e:
+                if self.debug:
+                    print(f"Error parsing XSS payload: {str(e)}. Falling back to standard parser.")
+                # If specialized parsing fails, fall back to the standard approach
+        
+        # Standard argument parsing for other cases
+        # Split by commas, but respect quotes
+        in_quotes = False
+        quote_char = None
+        current_arg = ""
+        escaped = False
+        bracket_depth = 0  # Track depth of angle brackets (for HTML/XML tags)
+        
+        for char in args_str:
+            if escaped:
+                current_arg += char
+                escaped = False
+                continue
+                
+            if char == '\\':
+                escaped = True
+                current_arg += char
+                continue
+            
+            # Track angle brackets for HTML/XML content
+            if char == '<':
+                bracket_depth += 1
+            elif char == '>':
+                bracket_depth = max(0, bracket_depth - 1)  # Prevent negative depth
+                
+            if char in ['"', "'"]:
+                if not in_quotes:
+                    in_quotes = True
+                    quote_char = char
+                elif char == quote_char:
+                    in_quotes = False
+                    quote_char = None
+                current_arg += char
+            elif char == ',' and not in_quotes and bracket_depth == 0:
+                # End of argument - only split on commas that are not inside quotes or HTML tags
+                args.append(self._parse_arg_value(current_arg.strip()))
+                current_arg = ""
+            else:
+                current_arg += char
+        
+        # Add the last argument if there is one
+        if current_arg.strip():
+            args.append(self._parse_arg_value(current_arg.strip()))
+        
+        # Execute the function with the parsed arguments
+        return func(*args)
+    
+    def _find_safe_comma_position(self, args_str):
+        """Find a safe position for the first comma that's not inside quotes or HTML tags.
+        
+        Args:
+            args_str: String containing argument values
+            
+        Returns:
+            Position of the first safe comma, or -1 if not found
+        """
+        in_quotes = False
+        quote_char = None
+        bracket_depth = 0
+        escaped = False
+        
+        for i, char in enumerate(args_str):
+            if escaped:
+                escaped = False
+                continue
+                
+            if char == '\\':
+                escaped = True
+                continue
+                
+            # Track quotes
+            if char in ['"', "'"]:
+                if not in_quotes:
+                    in_quotes = True
+                    quote_char = char
+                elif char == quote_char:
+                    in_quotes = False
+                    quote_char = None
+            
+            # Track angle brackets
+            elif char == '<':
+                bracket_depth += 1
+            elif char == '>':
+                bracket_depth = max(0, bracket_depth - 1)
+                
+            # Check for safe comma
+            elif char == ',' and not in_quotes and bracket_depth == 0:
+                return i
+                
+        return -1
+        
+    def _parse_arg_value(self, arg_str):
+        """Parse an argument string to its appropriate Python value.
+        
+        Args:
+            arg_str: String representation of the argument
+            
+        Returns:
+            Parsed argument value
+        """
+        # Safety check for empty strings
+        if not arg_str or arg_str.isspace():
+            return ""
+            
+        # Strip quotes if the argument is a quoted string
+        if (arg_str.startswith('"') and arg_str.endswith('"')) or \
+           (arg_str.startswith("'") and arg_str.endswith("'")):
+            # Remove the quotes and handle escaped quotes inside
+            inner_str = arg_str[1:-1]
+            # Return the actual string without modifications (to preserve HTML/JavaScript content)
+            return inner_str
+            
+        # Handle numeric values
+        try:
+            if '.' in arg_str:
+                return float(arg_str)
+            else:
+                return int(arg_str)
+        except ValueError:
+            # Not a number, return as is
+            return arg_str
 
     def auth_needed(self) -> str:
         """Prompt for user authentication.
@@ -362,6 +580,7 @@ class Tools:
         Returns:
             Fixed tool use string with validated selectors
         """
+        # Import re at the top level instead
         import re
         
         # Check for common selector patterns in tool functions
