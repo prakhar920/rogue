@@ -50,8 +50,8 @@ Examples:
                         help='Perform subdomain enumeration')
 
     parser.add_argument('-m', '--model',
-                        choices=['o3-mini', 'o1-preview'],
-                        default='o3-mini',
+                        choices=['o3-mini', 'o1-preview', 'o4-mini'],
+                        default='o4-mini',
                         help='LLM model to use (default: o3-mini)')
     
     parser.add_argument('-o', '--output',

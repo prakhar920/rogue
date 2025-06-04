@@ -108,7 +108,7 @@ class LLM:
             Generated response text
         """
         response = self.client.chat.completions.create(
-            model="o3-mini",
+            model="o4-mini",
             reasoning_effort=reasoning,
             messages=messages,
         )
