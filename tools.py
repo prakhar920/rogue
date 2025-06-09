@@ -103,11 +103,12 @@ class Tools:
         page.reload()
         return page.inner_html("html")
 
-    def python_interpreter(self, code: str) -> str:
+    def python_interpreter(self, code: str, page=None) -> str:
         """Execute Python code and capture output.
         
         Args:
             code: Python code to execute
+            page: Optional Playwright page object for browser context access
             
         Returns:
             Output from code execution
@@ -116,8 +117,18 @@ class Tools:
         old_stdout = sys.stdout
         sys.stdout = output_buffer
         
+        # Make page and browser context available to the executed code
+        exec_globals = {'page': page}
+        if page:
+            exec_globals.update({
+                'browser_context': page.context,
+                'cookies': page.context.cookies(),
+                'current_url': page.url,
+                'user_agent': page.evaluate('navigator.userAgent')
+            })
+        
         try:
-            exec(code)
+            exec(code, exec_globals)
             output = output_buffer.getvalue()
             return output
         finally:
@@ -136,21 +147,6 @@ class Tools:
         input(prompt)
         return "Input done!"
 
-    def execute_tool(self, page, tool_use: str):
-        """Execute a tool command.
-        
-        Args:
-            page: Playwright page object
-            tool_use: Tool command to execute
-            
-        Returns:
-            Result of tool execution or error message
-        """
-        try:
-            return eval("self." + tool_use)
-        except Exception as e:
-            return f"Error executing tool: {str(e)}"
-
     def auth_needed(self) -> str:
         """Prompt for user authentication.
         
@@ -167,6 +163,21 @@ class Tools:
             Completion message
         """
         return "Completed"
+
+    def execute_tool(self, page, tool_use: str):
+        """Execute a tool command.
+        
+        Args:
+            page: Playwright page object
+            tool_use: Tool command to execute
+            
+        Returns:
+            Result of tool execution or error message
+        """
+        try:
+            return eval("self." + tool_use)
+        except Exception as e:
+            return f"Error executing tool: {str(e)}"
 
     def extract_tool_use(self, action: str) -> str:
         """Extract tool command from action description.
@@ -210,6 +221,10 @@ class Tools:
                 If you want to refresh the current page, you can simply call this function.
             - python_interpreter(code)
                 If you want to run some python code, you can simply pass in the code you want to run. This will be run in a python interpreter and the output will be returned. For instance, if you want to create a new file, run some system commands, whatever you want, you can. We will run it with exec and give you the output so make sure to print stuff in case you need an output.
+                
+                IMPORTANT: You can use python_interpreter in two ways:
+                1. Standalone: python_interpreter('import requests; print("hello")') - for basic HTTP requests
+                2. Browser-aware: python_interpreter('print(current_url); print(len(cookies))', page) - for session-aware requests that need cookies/context
             - complete()
                 If you think you have explored all possible concerns and avenues and we want to move to some other page, you can simply call this function. This will just take whatever next url we have for analysis and go to it.
 
@@ -223,12 +238,14 @@ class Tools:
             ```
 
             ## Output format:
-            Your output must exactly be a tool use. You must pass the first argument as the page object always, and the second argument comes from the action given above. For instance:
+            Your output must exactly be a tool use. For most tools, you must pass the first argument as the page object, and the second argument comes from the action given above. However, python_interpreter() is an exception - it only takes the code parameter. For instance:
 
             execute_js(page, 'fetch("/api/create-job", {{the params and what not go here}})')
             goto(page, "https://example.com")
             fill(page, "#username", "admin")
             submit(page, "#login")
+            python_interpreter('import requests; print("Hello")')  # NO page argument!
+            python_interpreter('print(current_url, len(cookies))', page)  # WITH page for browser context!
             complete() # dont pass in anything
             auth_needed() # dont pass in anything
 
