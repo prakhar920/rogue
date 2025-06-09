@@ -40,7 +40,7 @@ class Reporter:
 
         You must be extremely strict in your assessment. For a vulnerability to be considered valid, the conversation MUST show:
         1. A clear attack vector that was successfully exploited
-        2. Concrete proof that the exploit worked (e.g. actual sensitive data accessed, actual code execution achieved)
+        2. Concrete proof that the exploit worked (e.g. actual sensitive data accessed, actual code execution achieved, authentication bypass, privilege escalation, etc.)
         3. Specific technical details about how the exploit was performed
         4. The exact payload/steps that made it work
 

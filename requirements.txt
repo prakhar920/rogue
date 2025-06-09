@@ -1,9 +1,10 @@
-anthropic==0.47.1
-beautifulsoup4==4.13.3
+anthropic
+beautifulsoup4
 colorama==0.4.6
-openai==1.64.0
-playwright==1.49.1
-PyYAML==6.0.2
+openai
+playwright
 PyYAML==6.0.2
 Requests==2.32.3
-tiktoken==0.9.0
+tiktoken
+lxml
+python-dotenv

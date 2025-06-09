@@ -32,6 +32,12 @@ Examples:
 
     # Advanced scan with subdomain enumeration and URL discovery
     python run.py -u https://example.com -e -s -m o3-preview -i 10
+    
+    # Comprehensive scan with more security testing plans
+    python run.py -u https://example.com -p 15 -i 5
+    
+    # Thorough scan with maximum coverage
+    python run.py -u https://example.com -p 20 -i 8 -e
         '''
     )
     
@@ -63,6 +69,11 @@ Examples:
                         default=10,
                         help='Maximum iterations per plan of attack (default: 10)')
 
+    parser.add_argument('-p', '--num-plans',
+                        type=int,
+                        default=10,
+                        help='Number of security testing plans to generate per page (default: 10)')
+
     args = parser.parse_args()
     
     # Create output directory if it doesn't exist
@@ -76,6 +87,7 @@ if __name__ == "__main__":
     print("\n[*] Starting security scan...")
     print(f"[*] Target URL: {args.url}")
     print(f"[*] Using model: {args.model}")
+    print(f"[*] Plans per page: {args.num_plans}")
     print(f"[*] Results will be saved to: {args.output}\n")
     
     agent = Agent(
@@ -84,6 +96,7 @@ if __name__ == "__main__":
         enumerate_subdomains=args.subdomains,
         model=args.model,
         output_dir=args.output,
-        max_iterations=args.max_iterations
+        max_iterations=args.max_iterations,
+        num_plans=args.num_plans
     )
     agent.run()

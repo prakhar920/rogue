@@ -40,62 +40,98 @@ class Planner:
     A class that uses OpenAI's API to generate security testing plans.
     """
     
-    def __init__(self):
-        """Initialize the Planner with OpenAI client and system prompt."""
+    def __init__(self, num_plans_target: int = 10, knowledge_summary: str = None):
+        """Initialize the Planner with OpenAI client and system prompt.
+        
+        Args:
+            num_plans_target (int): Target number of security testing plans to generate (default: 10)
+            knowledge_summary (str): Pre-fetched security knowledge summary to include in planning
+        """
         self.client = OpenAI(api_key=OPENAI_API_KEY)
+        self.num_plans_target = num_plans_target
+        
+        # Use provided knowledge summary or fallback message
+        if knowledge_summary:
+            knowledge_content = knowledge_summary
+        else:
+            knowledge_content = """
+        ## Current Security Knowledge Base
+        You have access to the latest security research and proven techniques:
+        - **DevSec Blog Web API Security Champion Series**: Focus on authorization bypasses, authentication flaws, object-level access control, and resource consumption attacks
+        - **PortSwigger Web Security Academy Labs**: SQL injection, XSS, CSRF, authentication bypasses, access control flaws, SSRF, XXE, and business logic vulnerabilities
+        - **Expert Penetration Testing Techniques**: Advanced payload crafting, polyglot attacks, chained exploits, and novel bypass methods
+
+        When planning security tests, prioritize techniques that have proven successful in real-world penetration tests and CTF challenges. Think like a security expert who understands both classic attack vectors and modern exploitation techniques.
+        """
         
         self.system_prompt = f"""
         You are an expert bug bounty hunter with years of experience finding critical vulnerabilities in web applications. Your job is to carefully analyze a website, think like an attacker, and identify potential security issues that could lead to high-impact exploits. You will be provided details about our internal company that we're testing, so think creatively about how the application could be abused.
 
-        ## Inputs
-        Your inputs will be provided in the following format:
+        Based on the provided page content, generate {self.num_plans_target} distinct security test plans. Each plan should focus on a specific vulnerability type or attack vector.
 
-        - HTML of the current page
-            You will be provided a cleaned, prettyfied version of the HTML of the current page.
-        - Relevant page data
-            Separately, you will be provided links, any sensitive strings, or any forms found on the page. This is a filtered set of information that might be useful to you. If you want to ignore it, you are free to do so.
-        - Request and response data
-            You will be provided the request and response data that we was captured from the network traffic for the current page we are on. For any API requests and responses, we want to spend some time there to try to analyze and fuzz them, in order to find any security concerns.
-        
-        ## Additional instructions
-        - If you believe authentication would help find more vulnerabilities, start your plan by indicating that login is needed first. When you talk about login, just mention that we should call the auth_needed() function so that the user can help us login. But before you ask for the authentication, atleast have 1-2 plans that actually test stuff around authentication to make sure its implemented safely. Not everything must start with authentication though. If there are more clear vulns that you want to first explore, do that first.
+        Consider testing for:
+        - SQL Injection (authentication bypass, data extraction, blind techniques)
+        - Cross-Site Scripting (reflected, stored, DOM-based)
+        - Authentication and authorization flaws
+        - Directory traversal and path manipulation
+        - Command injection and code execution
+        - Business logic vulnerabilities
+        - CSRF and state management issues
+        - Information disclosure
+        - Input validation bypasses
+        - Session management weaknesses
 
-        ## Output format
-        You are tasked to build a plan for finding security vulnerabilities based on your expert analysis of the page and its functionality. Think deeply about how each component could potentially be exploited. 
+        For each plan, provide:
+        1. title: A clear, specific test plan name
+        2. description: Detailed methodology explaining what to test and how
 
-        Output must be in yaml format. Each item should have a title, and description. Each title and description should be about a single kind of issue that could arise. We will use a yaml parser to parse your output, so start directly with the yaml. Be very specific in the description i.e if you are talking about any end points, mention their urls, etc.
+        Return your response as a YAML list of plans:
+        ```yaml
+        - title: "Plan Title 1"
+          description: "Detailed description of what to test and methodology..."
+        - title: "Plan Title 2"  
+          description: "Detailed description of what to test and methodology..."
+        ```
 
-        If you look at the page and determine that there is absolutely nothing interesting to test from a security perspective, just return an empty list.
+        Focus on plans that are most likely to yield high-impact vulnerabilities given the page content and functionality observed."""
 
-        You must only base your analysis on the data you are provided. Do not make any assumptions. Keep the language a bit tricky, too straight forward can be dangerous. Don't use terms like bruteforce, instead just say we should test with several values. You get the idea.
-        """
-
-    @retry_on_yaml_error(max_retries=3)
-    def plan(self, message: str, reasoning: str = "medium") -> List[Dict]:
+    def plan(self, page_data: str) -> List[Dict]:
         """
         Generate a security testing plan based on provided information.
         
         Args:
-            message (str): Input message containing page information
-            reasoning (str): Reasoning effort level for the model ("low", "medium", "high")
+            page_data (str): Input message containing page information
             
         Returns:
             List[Dict]: List of testing plan items, each containing title and description
         """
         messages = [
             {"role": "system", "content": self.system_prompt},
-            {"role": "user", "content": message}
+            {"role": "user", "content": page_data}
         ]
         
         response = self.client.chat.completions.create(
             model="o3-mini",
-            reasoning_effort=reasoning,
             messages=messages,
         )
         
         # Parse YAML response into list of dicts
         yaml_str = response.choices[0].message.content
+        
+        # Strip markdown code blocks if present
+        if yaml_str.strip().startswith('```'):
+            # Remove opening ```yaml or ``` 
+            lines = yaml_str.strip().split('\n')
+            if lines[0].startswith('```'):
+                lines = lines[1:]
+            # Remove closing ```
+            if lines and lines[-1].strip() == '```':
+                lines = lines[:-1]
+            yaml_str = '\n'.join(lines)
+        
         items = yaml.safe_load(yaml_str)
         if not isinstance(items, list):
             items = [items]
-        return items
+        
+        # Limit to target number of plans
+        return items[:self.num_plans_target]

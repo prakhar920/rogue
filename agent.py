@@ -3,6 +3,7 @@ import json
 import time
 import base64
 import logging
+import yaml
 from logger import Logger
 from proxy import WebProxy
 from llm import LLM
@@ -13,6 +14,7 @@ from tools import Tools
 from summarizer import Summarizer
 from utils import check_hostname, enumerate_subdomains, wait_for_network_idle, count_tokens
 from reporter import Reporter
+from knowledge_fetcher import initialize_knowledge_base
 
 logger = Logger()
 
@@ -27,7 +29,8 @@ class Agent:
 
     def __init__(self, starting_url: str, expand_scope: bool = False, 
                  enumerate_subdomains: bool = False, model: str = 'o3-mini',
-                 output_dir: str = 'security_results', max_iterations: int = 10):
+                 output_dir: str = 'security_results', max_iterations: int = 10,
+                 num_plans: int = 10):
         """
         Initialize the security testing agent.
 
@@ -38,6 +41,7 @@ class Agent:
             model: LLM model to use for analysis
             output_dir: Directory to save scan results
             max_iterations: Maximum iterations per test plan
+            num_plans: Number of security testing plans to generate per page (default: 10)
         """
         self.starting_url = starting_url
         self.expand_scope = expand_scope
@@ -45,11 +49,22 @@ class Agent:
         self.model = model
         self.output_dir = output_dir
         self.max_iterations = max_iterations
+        self.num_plans = num_plans
         self.keep_messages = 15
 
+        # Fetch security knowledge once at initialization
+        print("[Info] 🧠 Initializing security knowledge base...")
+        try:
+            knowledge_base = initialize_knowledge_base()
+            knowledge_summary = knowledge_base.get_knowledge_summary()
+            print("[Info] ✅ Security knowledge loaded successfully")
+        except Exception as e:
+            print(f"[Warning] Failed to fetch security knowledge: {e}")
+            knowledge_summary = None
+        
         self.proxy = WebProxy(starting_url, logger)
-        self.llm = LLM()
-        self.planner = Planner()
+        self.llm = LLM(knowledge_summary=knowledge_summary)
+        self.planner = Planner(num_plans_target=self.num_plans, knowledge_summary=knowledge_summary)
         self.scanner = None
         self.tools = Tools()
         self.history = []
@@ -119,6 +134,20 @@ class Agent:
             logger.info("Generating a plan for security testing", color='cyan')
             total_tokens += count_tokens(page_data)
             plans = self.planner.plan(page_data)
+
+            # Save plans to YAML file for analysis
+            plans_file = os.path.join(self.output_dir, f"plans_{url.replace('://', '_').replace('/', '_')}.yaml")
+            os.makedirs(self.output_dir, exist_ok=True)
+            
+            with open(plans_file, 'w') as f:
+                yaml.dump({
+                    'url': url,
+                    'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'),
+                    'num_plans_generated': len(plans),
+                    'plans': plans
+                }, f, default_flow_style=False, allow_unicode=True)
+            
+            logger.info(f"Plans saved to: {plans_file}", color='green')
 
             # Output the full plan first
             total_plans = len(plans)
