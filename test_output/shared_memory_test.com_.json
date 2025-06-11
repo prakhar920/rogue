@@ -1,0 +1,23 @@
+{
+  "target_url": "http://test.com",
+  "scan_start_time": "2025-06-10T16:33:59.403950",
+  "last_updated": "2025-06-10T16:33:59.403956",
+  "discoveries": {
+    "endpoints": [],
+    "technologies": [],
+    "credentials": [],
+    "vulnerabilities": [],
+    "failed_attempts": []
+  },
+  "session_data": {
+    "cookies": {},
+    "tokens": {},
+    "user_context": {}
+  },
+  "intelligence": {
+    "attack_vectors": [],
+    "priority_targets": [],
+    "next_actions": []
+  },
+  "plan_history": []
+}

@@ -8,7 +8,7 @@ import requests
 from bs4 import BeautifulSoup
 import time
 import re
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
 from urllib.parse import urljoin, urlparse
 import logging
 
@@ -23,6 +23,7 @@ class SecurityKnowledgeBase:
             "web_api_vulnerabilities": [],
             "portswigger_labs": [],
             "cisa_kev_web_vulns": [],
+            "technology_specific_cves": {},  # New: stores CVEs by technology
             "exploit_techniques": [],
             "payloads": [],
             "last_updated": None
@@ -153,191 +154,251 @@ class SecurityKnowledgeBase:
         """Fetch web-related vulnerabilities from CISA Known Exploited Vulnerabilities catalog"""
         print("[Info] 🏛️ Fetching CISA KEV web vulnerabilities...")
         
-        # Use the provided web search results data instead of scraping
-        # This contains the real CISA KEV data
-        kev_web_vulns = []
-        
-        # Web-focused CVEs from CISA KEV with detailed analysis
-        web_cves = [
-            {
-                'cve_id': 'CVE-2025-35939',
-                'title': 'Craft CMS Session File Arbitrary Content Storage RCE',
-                'description': 'Craft CMS stores arbitrary content provided by unauthenticated users in session files. This content could be accessed and executed, possibly using an independent vulnerability.',
-                'cvss_score': 6.9,
-                'exploit_techniques': [
-                    'Session file poisoning with PHP code injection',
-                    'Leveraging unauthenticated access to store malicious content',
-                    'Exploiting session file locations at /var/lib/php/sessions',
-                    'Manipulating return URLs to inject PHP payloads'
-                ],
-                'affected_components': [
-                    'Session management system',
-                    'Login redirect functionality', 
-                    'Return URL parameter handling'
-                ],
-                'payload_patterns': [
-                    'PHP code injection in session files',
-                    'Malicious return URL crafting',
-                    'Session file naming exploitation: sess_[session_value]'
-                ],
-                'vulnerability_type': 'code_injection'
-            },
-            {
-                'cve_id': 'CVE-2025-3935', 
-                'title': 'ScreenConnect ViewState Code Injection',
-                'description': 'ScreenConnect versions 25.2.3 and earlier may be susceptible to a ViewState code injection attack when machine keys are compromised.',
-                'cvss_score': 8.1,
-                'exploit_techniques': [
-                    'ViewState deserialization attack',
-                    'Machine key exploitation for payload signing',
-                    'ASP.NET ViewState manipulation',
-                    'Base64 encoded malicious ViewState creation'
-                ],
-                'affected_components': [
-                    'ASP.NET ViewState mechanism',
-                    'Web Forms state management',
-                    'Machine key validation system'
-                ],
-                'payload_patterns': [
-                    'Malicious ViewState Base64 payloads',
-                    'Deserialization gadget chains',
-                    'Signed ViewState with compromised machine keys'
-                ],
-                'vulnerability_type': 'deserialization'
-            },
-            {
-                'cve_id': 'CVE-2024-56145',
-                'title': 'Craft CMS Remote Code Execution via register_argc_argv',
-                'description': 'Craft CMS remote code execution vector when php.ini has register_argc_argv enabled.',
-                'cvss_score': 9.8,
-                'exploit_techniques': [
-                    'PHP configuration exploitation (register_argc_argv)',
-                    'Argument vector manipulation for RCE',
-                    'Command line argument injection',
-                    'Unauthenticated remote code execution'
-                ],
-                'affected_components': [
-                    'PHP runtime configuration',
-                    'Command line argument processing',
-                    'CMS core request handling'
-                ],
-                'payload_patterns': [
-                    'Malicious argv parameter injection',
-                    'Command execution via argument manipulation',
-                    'PHP register_argc_argv exploitation'
-                ],
-                'vulnerability_type': 'code_injection'
-            },
-            {
-                'cve_id': 'CVE-2023-39780',
-                'title': 'ASUS Router OS Command Injection via HTTP Parameter',
-                'description': 'ASUS RT-AX55 devices allow authenticated OS command injection via the /start_apply.htm qos_bw_rulelist parameter.',
-                'cvss_score': 8.8,
-                'exploit_techniques': [
-                    'HTTP parameter injection for OS command execution',
-                    'QoS configuration parameter abuse',
-                    'Router web interface exploitation',
-                    'Authenticated command injection attacks'
-                ],
-                'affected_components': [
-                    '/start_apply.htm endpoint',
-                    'qos_bw_rulelist parameter',
-                    'QoS bandwidth rule configuration'
-                ],
-                'payload_patterns': [
-                    'OS command injection in qos_bw_rulelist',
-                    'Parameter pollution for command execution',
-                    'Router configuration bypass techniques'
-                ],
-                'vulnerability_type': 'command_injection'
-            },
-            {
-                'cve_id': 'CVE-2021-32030',
-                'title': 'ASUS Router Authentication Bypass via Null Byte',
-                'description': 'ASUS router authentication bypass when processing remote input from unauthenticated user. Attacker-supplied \\0 matches device default \\0.',
-                'cvss_score': 9.8,
-                'exploit_techniques': [
-                    'Null byte injection for authentication bypass',
-                    'Default value matching exploitation',
-                    'Remote unauthenticated access techniques',
-                    'HTTP request manipulation for bypass'
-                ],
-                'affected_components': [
-                    'Router authentication system',
-                    'Remote access features',
-                    'Administrator interface access controls'
-                ],
-                'payload_patterns': [
-                    'Null byte (\\0) injection in auth parameters',
-                    'Default value matching attacks',
-                    'Authentication bypass via parameter manipulation'
-                ],
-                'vulnerability_type': 'authentication_bypass'
-            },
-            {
-                'cve_id': 'CVE-2024-27443',
-                'title': 'Zimbra Collaboration XSS in CalendarInvite',
-                'description': 'Cross-Site Scripting vulnerability in CalendarInvite feature due to improper input validation in calendar header handling.',
-                'cvss_score': 6.1,
-                'exploit_techniques': [
-                    'Calendar header XSS injection',
-                    'Email-based XSS payload delivery',
-                    'Webmail interface exploitation',
-                    'Calendar invitation abuse for script execution'
-                ],
-                'affected_components': [
-                    'CalendarInvite feature',
-                    'Calendar header processing',
-                    'Zimbra webmail classic interface'
-                ],
-                'payload_patterns': [
-                    'XSS payloads in calendar headers',
-                    'JavaScript injection via email calendar invites',
-                    'HTML email-based XSS vectors'
-                ],
-                'vulnerability_type': 'xss'
-            },
-            {
-                'cve_id': 'CVE-2023-38950',
-                'title': 'ZKTeco BioTime Path Traversal in iclock API',
-                'description': 'Path traversal vulnerability in the iclock API allows unauthenticated attackers to read arbitrary files.',
-                'cvss_score': 7.5,
-                'exploit_techniques': [
-                    'API path traversal for file disclosure',
-                    'Unauthenticated file system access',
-                    'Directory traversal via crafted API requests',
-                    'Arbitrary file reading techniques'
-                ],
-                'affected_components': [
-                    'iclock API endpoint',
-                    'File access controls',
-                    'API authentication mechanisms'
-                ],
-                'payload_patterns': [
-                    '../../../etc/passwd traversal sequences',
-                    'Null byte injection with path traversal',
-                    'API parameter manipulation for file access'
-                ],
-                'vulnerability_type': 'path_traversal'
-            }
+        # Web vulnerability keywords for filtering
+        web_vuln_keywords = [
+            # Core web vulnerability types
+            'sql injection', 'cross-site scripting', 'xss', 'cross-site request forgery', 'csrf',
+            'server-side request forgery', 'ssrf', 'remote code execution', 'rce', 'local file inclusion',
+            'lfi', 'remote file inclusion', 'rfi', 'path traversal', 'directory traversal',
+            'command injection', 'ldap injection', 'xml injection', 'xxe', 'xml external entity',
+            'template injection', 'deserialization', 'file upload', 'authentication bypass',
+            'authorization bypass', 'privilege escalation', 'session hijacking', 'clickjacking',
+            'open redirect', 'information disclosure', 'insecure direct object reference', 'idor',
+            
+            # Web technologies and components
+            'http', 'https', 'web', 'website', 'webapp', 'web application', 'browser', 'javascript',
+            'html', 'css', 'ajax', 'json', 'xml', 'rest', 'api', 'soap', 'graphql', 'websocket',
+            'cookie', 'session', 'header', 'parameter', 'form', 'input', 'upload', 'download',
+            'login', 'authentication', 'authorization', 'oauth', 'jwt', 'token', 'csrf token',
+            
+            # Web servers and frameworks
+            'apache', 'nginx', 'iis', 'tomcat', 'jetty', 'django', 'flask', 'express', 'spring',
+            'laravel', 'symfony', 'rails', 'asp.net', 'php', 'jsp', 'servlets', 'cgi',
+            'wordpress', 'drupal', 'joomla', 'magento', 'sharepoint', 'confluence', 'jira',
+            
+            # Network protocols commonly used in web contexts
+            'http header', 'url', 'uri', 'endpoint', 'redirect', 'referer', 'user-agent',
+            'content-type', 'accept', 'origin', 'host header', 'x-forwarded', 'proxy',
+            
+            # Common web vulnerability indicators
+            'injection', 'bypass', 'traversal', 'execution', 'disclosure', 'exposure',
+            'manipulation', 'tampering', 'spoofing', 'forgery', 'hijacking', 'fixation',
+            'pollution', 'confusion', 'smuggling', 'splitting', 'poisoning'
         ]
         
-        # Filter and enhance the web CVEs
-        web_keywords = ['http', 'web', 'xss', 'sql', 'ssrf', 'csrf', 'injection', 'authentication', 'session', 'cookie', 'parameter', 'api', 'endpoint']
-        ignore_keywords = ['kernel', 'system', 'linux', 'memory corruption', 'driver', 'windows dwm', 'gpu', 'chrome v8']
-        
-        for cve in web_cves:
-            # Check if it's web-related and not system-level
-            description_lower = cve['description'].lower()
-            title_lower = cve['title'].lower()
+        try:
+            # Fetch the CISA KEV page
+            response = requests.get(
+                "https://www.cvedetails.com/cisa-known-exploited-vulnerabilities/kev-1.html",
+                headers={
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                },
+                timeout=30
+            )
+            response.raise_for_status()
             
-            is_web_related = any(keyword in description_lower or keyword in title_lower for keyword in web_keywords)
-            is_system_level = any(keyword in description_lower or keyword in title_lower for keyword in ignore_keywords)
+            soup = BeautifulSoup(response.text, 'html.parser')
+            vulnerabilities = []
             
-            if is_web_related and not is_system_level:
-                kev_web_vulns.append(cve)
+            # Find vulnerability entries in the table
+            # The page typically has a table with CVE details
+            table = soup.find('table', {'class': 'searchresults'}) or soup.find('table')
+            
+            if not table:
+                print("[Warning] Could not find vulnerability table on CISA KEV page")
+                return []
+            
+            rows = table.find_all('tr')[1:]  # Skip header row
+            
+            for row in rows:
+                cells = row.find_all('td')
+                if len(cells) < 4:
+                    continue
+                
+                try:
+                    # Extract basic CVE information
+                    cve_id = cells[0].get_text(strip=True) if cells[0] else ""
+                    vendor = cells[1].get_text(strip=True) if len(cells) > 1 else ""
+                    product = cells[2].get_text(strip=True) if len(cells) > 2 else ""
+                    description = cells[3].get_text(strip=True) if len(cells) > 3 else ""
+                    
+                    # Check if this is a web-related vulnerability
+                    text_to_check = f"{description} {vendor} {product}".lower()
+                    is_web_related = any(keyword in text_to_check for keyword in web_vuln_keywords)
+                    
+                    if not is_web_related or not cve_id.startswith('CVE-'):
+                        continue
+                    
+                    # Extract additional details if available
+                    cvss_score = ""
+                    if len(cells) > 4:
+                        cvss_text = cells[4].get_text(strip=True)
+                        # Extract numeric CVSS score
+                        import re
+                        cvss_match = re.search(r'(\d+\.?\d*)', cvss_text)
+                        if cvss_match:
+                            cvss_score = cvss_match.group(1)
+                    
+                    # Determine vulnerability type based on description
+                    vuln_type = "Unknown"
+                    desc_lower = description.lower()
+                    
+                    if any(term in desc_lower for term in ['sql injection', 'sqli']):
+                        vuln_type = "SQL Injection"
+                    elif any(term in desc_lower for term in ['cross-site scripting', 'xss']):
+                        vuln_type = "Cross-Site Scripting"
+                    elif any(term in desc_lower for term in ['path traversal', 'directory traversal', 'lfi', 'rfi']):
+                        vuln_type = "Path Traversal"
+                    elif any(term in desc_lower for term in ['command injection', 'code execution', 'rce']):
+                        vuln_type = "Remote Code Execution"
+                    elif any(term in desc_lower for term in ['csrf', 'cross-site request forgery']):
+                        vuln_type = "Cross-Site Request Forgery"
+                    elif any(term in desc_lower for term in ['ssrf', 'server-side request forgery']):
+                        vuln_type = "Server-Side Request Forgery"
+                    elif any(term in desc_lower for term in ['authentication bypass', 'auth bypass']):
+                        vuln_type = "Authentication Bypass"
+                    elif any(term in desc_lower for term in ['file upload', 'upload']):
+                        vuln_type = "File Upload"
+                    elif any(term in desc_lower for term in ['information disclosure', 'data exposure']):
+                        vuln_type = "Information Disclosure"
+                    
+                    # Generate basic exploit techniques based on vulnerability type
+                    exploit_techniques = []
+                    if vuln_type == "SQL Injection":
+                        exploit_techniques = [
+                            "Test with single quote (') to trigger SQL errors",
+                            "Use UNION SELECT statements for data extraction",
+                            "Try boolean-based blind injection with OR/AND conditions",
+                            "Test time-based blind injection with WAITFOR DELAY",
+                            "Look for error-based injection opportunities"
+                        ]
+                    elif vuln_type == "Cross-Site Scripting":
+                        exploit_techniques = [
+                            "Test with <script>alert(1)</script> payload",
+                            "Try event handlers like onload, onerror, onclick",
+                            "Test with HTML entity encoding and URL encoding",
+                            "Look for DOM-based XSS in client-side JavaScript",
+                            "Test stored XSS in user input fields"
+                        ]
+                    elif vuln_type == "Path Traversal":
+                        exploit_techniques = [
+                            "Use ../ sequences to traverse directories",
+                            "Try null byte injection (%00) to bypass filters",
+                            "Test with URL encoding (%2e%2e%2f)",
+                            "Attempt to access /etc/passwd or C:\\windows\\win.ini",
+                            "Test different path separators (/, \\)"
+                        ]
+                    elif vuln_type == "Remote Code Execution":
+                        exploit_techniques = [
+                            "Identify injection points in user input",
+                            "Test command chaining with ;, &&, ||",
+                            "Try system commands like whoami, id, dir",
+                            "Look for file upload functionality",
+                            "Test template injection payloads"
+                        ]
+                    
+                    vulnerability = {
+                        "cve_id": cve_id,
+                        "description": description,
+                        "vendor": vendor,
+                        "product": product,
+                        "vulnerability_type": vuln_type,
+                        "cvss_score": cvss_score,
+                        "exploit_techniques": exploit_techniques,
+                        "affected_components": [product] if product else [],
+                        "payload_patterns": self._generate_payload_patterns(vuln_type),
+                        "testing_guidance": f"Focus on {vuln_type.lower()} testing in {product} applications"
+                    }
+                    
+                    vulnerabilities.append(vulnerability)
+                    
+                    # Limit to prevent overwhelming the knowledge base
+                    if len(vulnerabilities) >= 20:
+                        break
+                        
+                except Exception as e:
+                    print(f"[Warning] Error parsing CVE row: {e}")
+                    continue
+            
+            print(f"[Info] Successfully parsed {len(vulnerabilities)} web-related CVEs from CISA KEV")
+            return vulnerabilities
+            
+        except requests.RequestException as e:
+            print(f"[Warning] Failed to fetch CISA KEV data: {e}")
+            print("[Info] Using fallback web vulnerability patterns...")
+            
+            # Fallback: return some common web vulnerability patterns for testing
+            return [
+                {
+                    "cve_id": "FALLBACK-001",
+                    "description": "Common SQL injection vulnerability pattern",
+                    "vendor": "Various",
+                    "product": "Web Applications",
+                    "vulnerability_type": "SQL Injection",
+                    "cvss_score": "7.5",
+                    "exploit_techniques": [
+                        "Test with single quote (') to trigger SQL errors",
+                        "Use UNION SELECT statements for data extraction",
+                        "Try boolean-based blind injection with OR/AND conditions"
+                    ],
+                    "affected_components": ["Database queries", "Login forms", "Search functionality"],
+                    "payload_patterns": ["'", "' OR 1=1--", "' UNION SELECT NULL--"],
+                    "testing_guidance": "Focus on input parameters that interact with databases"
+                },
+                {
+                    "cve_id": "FALLBACK-002", 
+                    "description": "Cross-site scripting vulnerability pattern",
+                    "vendor": "Various",
+                    "product": "Web Applications",
+                    "vulnerability_type": "Cross-Site Scripting",
+                    "cvss_score": "6.1",
+                    "exploit_techniques": [
+                        "Test with <script>alert(1)</script> payload",
+                        "Try event handlers like onload, onerror",
+                        "Test with HTML entity encoding"
+                    ],
+                    "affected_components": ["User input forms", "URL parameters", "Comment sections"],
+                    "payload_patterns": ["<script>alert(1)</script>", "<img src=x onerror=alert(1)>"],
+                    "testing_guidance": "Focus on any user-controllable output in HTML context"
+                }
+            ]
         
-        return kev_web_vulns
+        except Exception as e:
+            print(f"[Error] Unexpected error fetching CISA KEV data: {e}")
+            return []
+    
+    def _generate_payload_patterns(self, vuln_type: str) -> List[str]:
+        """Generate common payload patterns for a vulnerability type"""
+        patterns = {
+            "SQL Injection": [
+                "'", "\"", "' OR 1=1--", "' UNION SELECT NULL--", 
+                "'; DROP TABLE users--", "' AND 1=2--", "1' OR '1'='1"
+            ],
+            "Cross-Site Scripting": [
+                "<script>alert(1)</script>", "<img src=x onerror=alert(1)>",
+                "javascript:alert(1)", "<svg onload=alert(1)>", 
+                "'-alert(1)-'", "\"><script>alert(1)</script>"
+            ],
+            "Path Traversal": [
+                "../", "..\\", "....//", "..%2f", "%2e%2e%2f",
+                "../../../../etc/passwd", "..\\..\\..\\windows\\win.ini",
+                "%00../", "....\\\\", "..%c0%af"
+            ],
+            "Remote Code Execution": [
+                "; ls", "| whoami", "&& dir", "$(id)", "`whoami`",
+                "; cat /etc/passwd", "| type C:\\windows\\win.ini",
+                "${@print(system('id'))}", "<%- system('whoami') %>"
+            ],
+            "Cross-Site Request Forgery": [
+                "<form method=post action=target><input type=submit value=Click></form>",
+                "<img src=target?action=delete>", "<script>fetch('/admin/delete')</script>"
+            ],
+            "Server-Side Request Forgery": [
+                "http://localhost", "http://127.0.0.1", "http://169.254.169.254",
+                "file:///etc/passwd", "gopher://127.0.0.1:25", "dict://localhost:11211"
+            ]
+        }
+        return patterns.get(vuln_type, ["test", "' OR 1=1", "<script>alert(1)</script>"])
     
     def _extract_vulnerability_type(self, title: str) -> str:
         """Extract vulnerability type from article title"""
@@ -483,6 +544,342 @@ class SecurityKnowledgeBase:
         summary += "- XSS via email/calendar features bypasses traditional input filters\n"
         
         return summary
+
+    def query_technology_specific_cves(self, technologies: List[str]) -> Dict[str, List[Dict]]:
+        """
+        Query CVEs specific to discovered technologies.
+        
+        Args:
+            technologies: List of technology identifiers (e.g., ['php', 'wordpress', 'apache'])
+            
+        Returns:
+            Dict mapping technology to list of relevant CVEs
+        """
+        print(f"[Info] 🔍 Querying CVEs for discovered technologies: {', '.join(technologies)}")
+        
+        tech_cves = {}
+        
+        for tech in technologies:
+            print(f"[Info] 📡 Searching CVEs for {tech}...")
+            cves = self._fetch_technology_cves(tech)
+            if cves:
+                tech_cves[tech] = cves
+                print(f"[Info] ✅ Found {len(cves)} CVEs for {tech}")
+            else:
+                print(f"[Info] ⚠️ No CVEs found for {tech}")
+                
+            time.sleep(0.5)  # Rate limiting
+            
+        # Cache results
+        self.knowledge["technology_specific_cves"].update(tech_cves)
+        
+        return tech_cves
+
+    def _fetch_technology_cves(self, technology: str) -> List[Dict]:
+        """
+        Fetch CVEs for a specific technology from multiple sources.
+        
+        Args:
+            technology: Technology name (e.g., 'php', 'wordpress', 'apache')
+            
+        Returns:
+            List of CVE dictionaries with vulnerability details
+        """
+        cves = []
+        
+        # Try multiple CVE sources
+        sources = [
+            self._query_cve_details,
+            self._query_nvd_nist,
+            self._query_cisa_kev_tech_specific
+        ]
+        
+        for source_func in sources:
+            try:
+                source_cves = source_func(technology)
+                cves.extend(source_cves)
+                if len(cves) >= 10:  # Limit to prevent overwhelming
+                    break
+            except Exception as e:
+                print(f"[Warning] CVE source failed for {technology}: {e}")
+                continue
+                
+        return cves[:10]  # Return top 10 most relevant
+
+    def _query_cve_details(self, technology: str) -> List[Dict]:
+        """Query CVE Details for technology-specific vulnerabilities"""
+        cves = []
+        
+        try:
+            # Search for recent high-severity CVEs
+            search_url = f"https://www.cvedetails.com/vulnerability-search.php"
+            params = {
+                'f': 1,
+                'vendor': '',
+                'product': technology,
+                'cvssscoremin': 7.0,  # High severity only
+                'cvssscoremax': '',
+                'publishdatefrom': '2020-01-01',  # Recent vulnerabilities
+                'publishdateto': '',
+                'order': 3,  # Order by CVSS score
+                'trc': 50,
+                'sha': 'ba3f4b7bb1cd86d47bcaba1a0f929fc65fb1e2e1'
+            }
+            
+            response = self.session.get(search_url, params=params, timeout=15)
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, 'html.parser')
+                
+                # Parse CVE results table
+                for row in soup.find_all('tr')[1:6]:  # First 5 results
+                    cells = row.find_all('td')
+                    if len(cells) >= 3:
+                        cve_link = cells[1].find('a')
+                        if cve_link:
+                            cve_id = cve_link.text.strip()
+                            cve_desc = cells[2].text.strip()
+                            cvss_score = cells[3].text.strip() if len(cells) > 3 else 'N/A'
+                            
+                            cves.append({
+                                'id': cve_id,
+                                'description': cve_desc[:300],
+                                'cvss_score': cvss_score,
+                                'technology': technology,
+                                'source': 'CVE Details'
+                            })
+                            
+        except Exception as e:
+            print(f"[Warning] CVE Details query failed: {e}")
+            
+        return cves
+
+    def _query_nvd_nist(self, technology: str) -> List[Dict]:
+        """Query NVD NIST API for technology-specific CVEs"""
+        cves = []
+        
+        try:
+            # Use NVD REST API v2
+            api_url = "https://services.nvd.nist.gov/rest/json/cves/2.0"
+            params = {
+                'keywordSearch': technology,
+                'cvssV3Severity': 'HIGH,CRITICAL',
+                'resultsPerPage': 5,
+                'startIndex': 0
+            }
+            
+            response = self.session.get(api_url, params=params, timeout=15)
+            if response.status_code == 200:
+                data = response.json()
+                
+                for vulnerability in data.get('vulnerabilities', []):
+                    cve_item = vulnerability.get('cve', {})
+                    cve_id = cve_item.get('id', 'Unknown')
+                    
+                    # Get description
+                    descriptions = cve_item.get('descriptions', [])
+                    description = 'No description available'
+                    for desc in descriptions:
+                        if desc.get('lang') == 'en':
+                            description = desc.get('value', '')[:300]
+                            break
+                    
+                    # Get CVSS score
+                    cvss_score = 'N/A'
+                    metrics = cve_item.get('metrics', {})
+                    if 'cvssMetricV31' in metrics:
+                        cvss_data = metrics['cvssMetricV31'][0]['cvssData']
+                        cvss_score = cvss_data.get('baseScore', 'N/A')
+                    
+                    cves.append({
+                        'id': cve_id,
+                        'description': description,
+                        'cvss_score': cvss_score,
+                        'technology': technology,
+                        'source': 'NVD NIST'
+                    })
+                    
+        except Exception as e:
+            print(f"[Warning] NVD NIST query failed: {e}")
+            
+        return cves
+
+    def _query_cisa_kev_tech_specific(self, technology: str) -> List[Dict]:
+        """Query CISA KEV for technology-specific vulnerabilities"""
+        cves = []
+        
+        try:
+            # Download CISA KEV catalog
+            kev_url = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
+            response = self.session.get(kev_url, timeout=30)
+            
+            if response.status_code == 200:
+                kev_data = response.json()
+                
+                for vuln in kev_data.get('vulnerabilities', []):
+                    vendor = vuln.get('vendorProject', '').lower()
+                    product = vuln.get('product', '').lower()
+                    vuln_name = vuln.get('vulnerabilityName', '').lower()
+                    
+                    # Check if technology matches vendor, product, or vulnerability name
+                    tech_lower = technology.lower()
+                    if (tech_lower in vendor or tech_lower in product or 
+                        tech_lower in vuln_name or vendor in tech_lower):
+                        
+                        cves.append({
+                            'id': vuln.get('cveID', 'Unknown'),
+                            'description': f"{vuln.get('vulnerabilityName', '')}: {vuln.get('shortDescription', '')}",
+                            'cvss_score': 'CISA KEV',
+                            'technology': technology,
+                            'source': 'CISA KEV',
+                            'vendor': vuln.get('vendorProject', ''),
+                            'product': vuln.get('product', ''),
+                            'due_date': vuln.get('dueDate', '')
+                        })
+                        
+                        if len(cves) >= 5:  # Limit CISA results
+                            break
+                            
+        except Exception as e:
+            print(f"[Warning] CISA KEV query failed: {e}")
+            
+        return cves
+
+    def extract_technologies_from_page_data(self, page_data: str) -> List[str]:
+        """
+        Extract technology identifiers from scanner page data.
+        
+        Args:
+            page_data: Scanner data containing page information
+            
+        Returns:
+            List of detected technologies
+        """
+        technologies = set()
+        page_lower = page_data.lower()
+        
+        # Web frameworks and languages
+        tech_patterns = {
+            'php': ['php', '.php', 'x-powered-by: php'],
+            'asp.net': ['asp.net', '.aspx', '.asp', 'viewstate', 'x-aspnet-version'],
+            'java': ['java', '.jsp', '.do', 'jsessionid', 'tomcat', 'jetty'],
+            'python': ['python', 'django', 'flask', '.py'],
+            'ruby': ['ruby', 'rails', '.rb'],
+            'nodejs': ['node.js', 'express', 'x-powered-by: express'],
+            'go': ['golang', ' go '],
+            
+            # CMS and Applications
+            'wordpress': ['wordpress', 'wp-content', 'wp-admin', '/wp/'],
+            'drupal': ['drupal', '/sites/default/', 'drupal.org'],
+            'joomla': ['joomla', '/administrator/', 'joomla.org'],
+            'magento': ['magento', '/magento/', 'mage'],
+            'shopify': ['shopify', 'myshopify.com'],
+            'sharepoint': ['sharepoint', '_layouts', 'microsoftsharepointteamservices'],
+            'confluence': ['confluence', '/confluence/', 'atlassian'],
+            'jira': ['jira', '/jira/', 'atlassian'],
+            
+            # Web servers
+            'apache': ['apache', 'server: apache'],
+            'nginx': ['nginx', 'server: nginx'],
+            'iis': ['iis', 'server: microsoft-iis', 'x-aspnet-version'],
+            'lighttpd': ['lighttpd', 'server: lighttpd'],
+            
+            # Databases (from error messages, headers)
+            'mysql': ['mysql', 'mysqli', 'sql syntax', 'mysql_'],
+            'postgresql': ['postgresql', 'postgres', 'psql'],
+            'oracle': ['oracle', 'ora-', 'plsql'],
+            'mongodb': ['mongodb', 'mongo', 'nosql'],
+            'mssql': ['mssql', 'microsoft sql server', 'sql server'],
+            
+            # JavaScript frameworks
+            'react': ['react', 'reactjs', '_react'],
+            'angular': ['angular', 'angularjs', 'ng-'],
+            'vue': ['vue.js', 'vuejs', '__vue'],
+            'jquery': ['jquery', '$(', 'jquery.min.js'],
+            
+            # Cloud platforms
+            'aws': ['amazonaws.com', 'aws', 'cloudfront'],
+            'azure': ['azure', 'azurewebsites.net', 'microsoftonline'],
+            'gcp': ['googleapis.com', 'google cloud', 'appspot.com'],
+            
+            # Other technologies
+            'elasticsearch': ['elasticsearch', 'elastic.co'],
+            'redis': ['redis', 'redis-server'],
+            'docker': ['docker', 'container'],
+            'kubernetes': ['kubernetes', 'k8s'],
+        }
+        
+        for tech, patterns in tech_patterns.items():
+            for pattern in patterns:
+                if pattern in page_lower:
+                    technologies.add(tech)
+                    break
+        
+        # Also check for version numbers in common headers
+        version_patterns = {
+            'apache': r'server:\s*apache[/\s]([\d.]+)',
+            'nginx': r'server:\s*nginx[/\s]([\d.]+)',
+            'php': r'x-powered-by:\s*php[/\s]([\d.]+)',
+        }
+        
+        for tech, pattern in version_patterns.items():
+            matches = re.findall(pattern, page_lower)
+            if matches and tech not in technologies:
+                technologies.add(f"{tech} {matches[0]}")
+        
+        return list(technologies)
+
+    def get_technology_specific_knowledge(self, page_data: str) -> str:
+        """
+        Get knowledge summary including technology-specific CVEs.
+        
+        Args:
+            page_data: Scanner data to extract technologies from
+            
+        Returns:
+            Knowledge summary including technology-specific vulnerabilities
+        """
+        # Extract technologies from page data
+        technologies = self.extract_technologies_from_page_data(page_data)
+        
+        if not technologies:
+            return self.get_knowledge_summary()  # Return general knowledge if no tech detected
+        
+        # Query CVEs for discovered technologies
+        tech_cves = self.query_technology_specific_cves(technologies)
+        
+        # Build enhanced knowledge summary
+        knowledge_parts = [
+            "## Security Knowledge Base",
+            "",
+            "### Discovered Technologies",
+            f"Detected: {', '.join(technologies)}",
+            ""
+        ]
+        
+        # Add technology-specific CVEs
+        if tech_cves:
+            knowledge_parts.extend([
+                "### Technology-Specific Vulnerabilities",
+                ""
+            ])
+            
+            for tech, cves in tech_cves.items():
+                knowledge_parts.append(f"**{tech.upper()} Vulnerabilities:**")
+                for cve in cves[:3]:  # Top 3 per technology
+                    knowledge_parts.append(f"- {cve['id']}: {cve['description'][:150]}... (CVSS: {cve['cvss_score']})")
+                knowledge_parts.append("")
+        
+        # Add general knowledge
+        knowledge_parts.extend([
+            "### General Security Testing Knowledge",
+            "- **DevSec Blog Web API Security Champion Series**: Authorization bypasses, authentication flaws, object-level access control",
+            "- **PortSwigger Web Security Academy Labs**: SQL injection, XSS, CSRF, authentication bypasses, access control flaws, SSRF, XXE",
+            "- **Expert Penetration Testing Techniques**: Advanced payload crafting, polyglot attacks, chained exploits",
+            "",
+            "**Testing Strategy**: Prioritize technology-specific vulnerabilities above, then apply general OWASP Top 10 testing."
+        ])
+        
+        return "\n".join(knowledge_parts)
 
 def initialize_knowledge_base() -> SecurityKnowledgeBase:
     """Initialize and fetch the security knowledge base"""
