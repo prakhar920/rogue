@@ -74,6 +74,11 @@ Examples:
                         default=10,
                         help='Number of security testing plans to generate per page (default: 10)')
 
+    parser.add_argument('--disable-rag',
+                        action='store_true',
+                        default=False,
+                        help='Disable RAG knowledge fetching for faster startup')
+
     args = parser.parse_args()
     
     # Create output directory if it doesn't exist
@@ -97,6 +102,7 @@ if __name__ == "__main__":
         model=args.model,
         output_dir=args.output,
         max_iterations=args.max_iterations,
-        num_plans=args.num_plans
+        num_plans=args.num_plans,
+        disable_rag=args.disable_rag
     )
     agent.run()

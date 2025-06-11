@@ -30,7 +30,7 @@ class Agent:
     def __init__(self, starting_url: str, expand_scope: bool = False, 
                  enumerate_subdomains: bool = False, model: str = 'o3-mini',
                  output_dir: str = 'security_results', max_iterations: int = 10,
-                 num_plans: int = 10):
+                 num_plans: int = 10, disable_rag: bool = False):
         """
         Initialize the security testing agent.
 
@@ -42,6 +42,7 @@ class Agent:
             output_dir: Directory to save scan results
             max_iterations: Maximum iterations per test plan
             num_plans: Number of security testing plans to generate per page (default: 10)
+            disable_rag: Whether to disable RAG knowledge fetching (default: False)
         """
         self.starting_url = starting_url
         self.expand_scope = expand_scope
@@ -52,15 +53,19 @@ class Agent:
         self.num_plans = num_plans
         self.keep_messages = 15
 
-        # Fetch security knowledge once at initialization
-        print("[Info] 🧠 Initializing security knowledge base...")
-        try:
-            knowledge_base = initialize_knowledge_base()
-            knowledge_summary = knowledge_base.get_knowledge_summary()
-            print("[Info] ✅ Security knowledge loaded successfully")
-        except Exception as e:
-            print(f"[Warning] Failed to fetch security knowledge: {e}")
+        # Fetch security knowledge once at initialization (unless disabled)
+        if disable_rag:
+            print("[Info] 🚫 RAG knowledge fetching disabled")
             knowledge_summary = None
+        else:
+            print("[Info] 🧠 Initializing security knowledge base...")
+            try:
+                knowledge_base = initialize_knowledge_base()
+                knowledge_summary = knowledge_base.get_knowledge_summary()
+                print("[Info] ✅ Security knowledge loaded successfully")
+            except Exception as e:
+                print(f"[Warning] Failed to fetch security knowledge: {e}")
+                knowledge_summary = None
         
         self.proxy = WebProxy(starting_url, logger)
         self.llm = LLM(knowledge_summary=knowledge_summary)
