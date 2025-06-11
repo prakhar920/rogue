@@ -114,7 +114,7 @@ class Planner:
         ## Current Security Knowledge Base
         You have access to the latest security research and proven techniques:
         - **DevSec Blog Web API Security Champion Series**: Focus on authorization bypasses, authentication flaws, object-level access control, and resource consumption attacks
-        - **PortSwigger Web Security Academy Labs**: SQL injection, XSS, CSRF, authentication bypasses, access control flaws, SSRF, XXE, and business logic vulnerabilities
+        - **PentestMonkey Cheat Sheets**: SQL injection, XSS, CSRF, authentication bypasses, access control flaws, SSRF, XXE, and business logic vulnerabilities
         - **Expert Penetration Testing Techniques**: Advanced payload crafting, polyglot attacks, chained exploits, and novel bypass methods
 
         When planning security tests, prioritize techniques that have proven successful in real-world penetration tests and CTF challenges. Think like a security expert who understands both classic attack vectors and modern exploitation techniques.

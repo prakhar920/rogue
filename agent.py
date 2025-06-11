@@ -3,7 +3,6 @@ import json
 import time
 import base64
 import logging
-import yaml
 from logger import Logger
 from proxy import WebProxy
 from llm import LLM
@@ -154,20 +153,6 @@ class Agent:
             # Use traditional single-shot planning
             plans = self.planner.plan(page_data)
             
-            # Save plans to YAML file for analysis
-            plans_file = os.path.join(self.output_dir, f"plans_{url.replace('://', '_').replace('/', '_')}.yaml")
-            os.makedirs(self.output_dir, exist_ok=True)
-            
-            with open(plans_file, 'w') as f:
-                yaml.dump({
-                    'url': url,
-                    'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'),
-                    'num_plans_generated': len(plans),
-                    'plans': plans
-                }, f, default_flow_style=False, allow_unicode=True)
-            
-            logger.info(f"Plans saved to: {plans_file}", color='green')
-
             # Output the full plan first
             total_plans = len(plans)
             for index, plan in enumerate(plans):

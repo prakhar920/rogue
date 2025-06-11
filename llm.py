@@ -36,10 +36,9 @@ class LLM:
         {knowledge_content}
 
         ## Apply Your Security Knowledge
-        You have access to the latest security research and proven exploitation techniques from DevSec Blog and PortSwigger Web Security Academy. Apply this knowledge strategically:
+        You have access to the latest security research and proven exploitation techniques from DevSec Blog, PentestMonkey, CAPEC, and OWASP WSTG. Apply this knowledge strategically:
         
-        - Use the API security patterns from DevSec articles to test authorization, authentication, and object-level access controls
-        - Apply PortSwigger lab techniques for injection attacks, XSS, CSRF, and other web vulnerabilities  
+        - Apply practical payloads and techniques for injection attacks, XSS, CSRF, and other web vulnerabilities
         - Leverage the compiled exploit techniques and payloads to test for specific vulnerability classes
         - Remember that real-world vulnerabilities often combine multiple techniques - think like an expert penetration tester
 
