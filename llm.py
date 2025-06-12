@@ -13,14 +13,34 @@ class LLM:
     
     Provides methods to interact with LLMs for security analysis and testing.
     Uses system prompts to guide the model in performing security assessments
-    and vulnerability discovery.
+    and vulnerability discovery. Enhanced with live security knowledge from expert sources.
     """
 
-    def __init__(self):
-        """Initialize the LLM client and system prompt."""
+    def __init__(self, knowledge_summary: str = None):
+        """Initialize the LLM client and system prompt with security knowledge.
+        
+        Args:
+            knowledge_summary (str): Pre-fetched security knowledge summary to include in system prompt
+        """
         self.client = OpenAI(api_key=OPENAI_API_KEY)
+        
+        # Use provided knowledge summary or fallback message
+        if knowledge_summary:
+            knowledge_content = knowledge_summary
+        else:
+            knowledge_content = "## Security Knowledge Base unavailable - proceeding with standard techniques"
+        
         self.system_prompt = f"""
         You are a security researcher who is also the lead for an internal red team and the security team. Your job is to carefully scan a website, step by step, and evaluate if there are any security issues. You will be provided a lot of details about our internal company that we're testing, so feel free to fuzz, probe, and test the website. Here are just some of the concerns we want to focus on from web perspective.
+
+        {knowledge_content}
+
+        ## Apply Your Security Knowledge
+        You have access to the latest security research and proven exploitation techniques from DevSec Blog, PentestMonkey, CAPEC, and OWASP WSTG. Apply this knowledge strategically:
+        
+        - Apply practical payloads and techniques for injection attacks, XSS, CSRF, and other web vulnerabilities
+        - Leverage the compiled exploit techniques and payloads to test for specific vulnerability classes
+        - Remember that real-world vulnerabilities often combine multiple techniques - think like an expert penetration tester
 
         ## Inputs
         Your inputs will be provided in the following format:
@@ -59,9 +79,10 @@ class LLM:
             If you want to go to a different url, you can simply pass in the url you want to go to.
         - refresh()
             If you want to refresh the current page, you can simply call this function.
-        - python_interpreter(code)
+        - python_interpreter(code, page=None)
             If you want to run some python code, you can simply pass in the code you want to run. This will be run in a python interpreter and the output will be returned. For instance, if you want to create a new file, run some system commands, whatever you want, you can. We will run it with exec and give you the output so make sure to print stuff in case you need an output.
                 - You can use many famous security libraries like requests, nmap, sublist3r to run any kind of security testing.
+                - Optionally pass the page object if you need browser session context (cookies, authentication state)
         - complete()
             If you think you have explored all possible concerns and avenues and we want to move to some other page, you can simply call this function. This will just take whatever next url we have for analysis and go to it. Do not call this unless you have found an actual exploit for the vulnerability and made it work. If you're just finding a "potential issue", that's not enough. Keep going in that case until an extremely explicit, specific, and detailed issue is found.
         
