@@ -27,17 +27,23 @@ def parse_args():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog='''
 Examples:
-    # Basic scan of a single URL
-    python run.py -u https://example.com -m o3-mini -o results
+    # Quick security assessment (5 plans, 3 iterations each)
+    python run.py -u https://example.com -p 5 -i 3
 
-    # Advanced scan with subdomain enumeration and URL discovery
-    python run.py -u https://example.com -e -s -m o3-preview -i 10
-    
-    # Comprehensive scan with more security testing plans
-    python run.py -u https://example.com -p 15 -i 5
-    
-    # Thorough scan with maximum coverage
-    python run.py -u https://example.com -p 20 -i 8 -e
+    # Standard comprehensive scan (10 plans, 10 iterations)
+    python run.py -u https://example.com -p 10 -i 10
+
+    # Unlimited plans with contextual CVE intelligence (15-25+ plans)
+    python run.py -u https://example.com -p -1 -i 5
+
+    # Deep security audit with scope expansion
+    python run.py -u https://example.com -p -1 -i 10 -e -s
+
+    # Targeted research with advanced model
+    python run.py -u https://example.com -p 20 -i 15 -m o1-preview
+
+    # Custom output directory with subdomain enumeration
+    python run.py -u https://example.com -s -o "results/$(date +%Y%m%d)" -p -1
         '''
     )
     
@@ -72,7 +78,7 @@ Examples:
     parser.add_argument('-p', '--num-plans',
                         type=int,
                         default=10,
-                        help='Number of security testing plans to generate per page (default: 10)')
+                        help='Number of security testing plans to generate per page. Use -1 for unlimited plans (15-25+ comprehensive tests with contextual CVE intelligence). Default: 10')
 
     parser.add_argument('--disable-rag',
                         action='store_true',
@@ -92,7 +98,13 @@ if __name__ == "__main__":
     print("\n[*] Starting security scan...")
     print(f"[*] Target URL: {args.url}")
     print(f"[*] Using model: {args.model}")
-    print(f"[*] Plans per page: {args.num_plans}")
+    
+    if args.num_plans == -1:
+        print(f"[*] Plans per page: Unlimited (15-25+ comprehensive tests with contextual CVE intelligence)")
+    else:
+        print(f"[*] Plans per page: {args.num_plans}")
+    
+    print(f"[*] Max iterations per plan: {args.max_iterations}")
     print(f"[*] Results will be saved to: {args.output}\n")
     
     agent = Agent(

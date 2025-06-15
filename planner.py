@@ -44,7 +44,7 @@ class Planner:
         """Initialize the Planner with OpenAI client and system prompt.
         
         Args:
-            num_plans_target (int): Target number of security testing plans to generate (default: 10)
+            num_plans_target (int): Target number of security testing plans to generate (default: 10, use -1 for unlimited)
             knowledge_summary (str): Pre-fetched security knowledge summary to include in planning
         """
         self.client = OpenAI(api_key=OPENAI_API_KEY)
@@ -64,10 +64,16 @@ class Planner:
         When planning security tests, prioritize techniques that have proven successful in real-world penetration tests and CTF challenges. Think like a security expert who understands both classic attack vectors and modern exploitation techniques.
         """
         
+        # Determine plan count instruction
+        if self.num_plans_target <= 0:
+            plan_instruction = "as many comprehensive security test plans as possible (aim for 15-25+ distinct plans)"
+        else:
+            plan_instruction = f"{self.num_plans_target} distinct security test plans"
+        
         self.system_prompt = f"""
         You are an expert bug bounty hunter with years of experience finding critical vulnerabilities in web applications. Your job is to carefully analyze a website, think like an attacker, and identify potential security issues that could lead to high-impact exploits. You will be provided details about our internal company that we're testing, so think creatively about how the application could be abused.
 
-        Based on the provided page content, generate {self.num_plans_target} distinct security test plans. Each plan should focus on a specific vulnerability type or attack vector.
+        Based on the provided page content, generate {plan_instruction}. Each plan should focus on a specific vulnerability type or attack vector.
 
         Consider testing for:
         - SQL Injection (authentication bypass, data extraction, blind techniques)
@@ -133,5 +139,8 @@ class Planner:
         if not isinstance(items, list):
             items = [items]
         
-        # Limit to target number of plans
-        return items[:self.num_plans_target]
+        # Limit to target number of plans only if a limit is set
+        if self.num_plans_target > 0:
+            return items[:self.num_plans_target]
+        else:
+            return items  # Return all plans when unlimited

@@ -57,18 +57,133 @@ python run.py -u https://example.com
 
 # Advanced scan with subdomain enumeration and URL discovery
 python run.py -u https://example.com -e -s -m o3-mini -i 10
+
+# Unlimited plans with contextual intelligence
+python run.py -u https://example.com -p -1 -i 5
 ```
 
 ## 🛠️ Command Line Options
 
-| Option | Description |
-|--------|-------------|
-| `-u, --url` | Target URL to test (required) |
-| `-e, --expand` | Expand testing to discovered URLs |
-| `-s, --subdomains` | Perform subdomain enumeration |
-| `-m, --model` | LLM model to use (o3-mini or o1-preview) |
-| `-o, --output` | Output directory for results |
-| `-i, --max-iterations` | Maximum iterations per plan of attack |
+### Required Parameters
+| Option | Description | Example |
+|--------|-------------|---------|
+| `-u, --url` | Target URL to test (required) | `-u https://example.com` |
+
+### Security Testing Configuration
+| Option | Description | Default | Example |
+|--------|-------------|---------|---------|
+| `-p, --num-plans` | Number of security test plans per page | `10` | `-p 15` (specific count)<br>`-p -1` (unlimited) |
+| `-i, --max-iterations` | Maximum iterations per security plan | `10` | `-i 5` (quick scan)<br>`-i 20` (thorough) |
+| `-m, --model` | LLM model for analysis | `o4-mini` | `-m o3-mini`<br>`-m o1-preview` |
+
+### Scope and Discovery
+| Option | Description | Default | Example |
+|--------|-------------|---------|---------|
+| `-e, --expand` | Test discovered URLs recursively | `False` | `-e` (enable expansion) |
+| `-s, --subdomains` | Enumerate and test subdomains | `False` | `-s` (enable subdomain discovery) |
+
+### Output and Reporting
+| Option | Description | Default | Example |
+|--------|-------------|---------|---------|
+| `-o, --output` | Directory for scan results | `security_results` | `-o my_scan_results` |
+
+## 📋 Usage Examples
+
+### Quick Security Assessment
+```bash
+# Fast scan with 5 focused plans, 3 iterations each
+python run.py -u https://target.com -p 5 -i 3
+```
+
+### Comprehensive Security Audit
+```bash
+# Unlimited plans with contextual CVE intelligence, thorough testing
+python run.py -u https://target.com -p -1 -i 10 -e -s
+```
+
+### Targeted Vulnerability Research
+```bash
+# Deep analysis with maximum iterations and scope expansion
+python run.py -u https://target.com -p 20 -i 15 -e -m o1-preview
+```
+
+### Subdomain Security Assessment
+```bash
+# Discover and test all subdomains with moderate depth
+python run.py -u https://target.com -s -p 10 -i 7
+```
+
+### Custom Output Directory
+```bash
+# Organize results by target and date
+python run.py -u https://target.com -o "results/target_$(date +%Y%m%d)" -p -1
+```
+
+## 🎯 Security Testing Modes
+
+### Plan Generation Strategies
+
+**Limited Plans (`-p <number>`)**
+- Generates a specific number of focused security test plans
+- Best for: Quick assessments, time-constrained testing
+- Example: `-p 5` generates 5 targeted vulnerability tests
+
+**Unlimited Plans (`-p -1`)**
+- Generates comprehensive security test coverage (15-25+ plans)
+- Includes contextual CVE intelligence based on detected technologies
+- Best for: Thorough security audits, research, bug bounty hunting
+- Example: `-p -1` generates maximum coverage plans
+
+### Iteration Control
+
+**Quick Scan (`-i 3-5`)**
+- Fast vulnerability discovery
+- Surface-level testing
+- Good for initial reconnaissance
+
+**Standard Scan (`-i 8-12`)**
+- Balanced depth and speed
+- Recommended for most use cases
+- Thorough validation of findings
+
+**Deep Scan (`-i 15-20`)**
+- Exhaustive testing per vulnerability
+- Maximum exploitation attempts
+- Best for critical applications
+
+### Model Selection
+
+**o4-mini (Default)**
+- Fast and cost-effective
+- Good for standard web application testing
+- Balanced performance and accuracy
+
+**o3-mini**
+- Enhanced reasoning capabilities
+- Better for complex applications
+- Improved payload generation
+
+**o1-preview**
+- Advanced analytical capabilities
+- Best for sophisticated targets
+- Maximum accuracy and depth
+
+## 🧠 Advanced Features
+
+### Contextual Intelligence
+- **Technology Detection**: Automatically identifies frameworks, CMS, libraries
+- **CVE Integration**: Fetches relevant vulnerabilities from CISA KEV catalog
+- **Smart Targeting**: Focuses tests on detected technologies
+
+### Iterative Planning
+- **Memory Management**: Maintains context across test iterations
+- **Adaptive Strategy**: Learns from previous attempts
+- **Failure Recovery**: Continues testing when exploits fail
+
+### Traffic Analysis
+- **Request Monitoring**: Captures all HTTP/HTTPS traffic
+- **Response Analysis**: Analyzes server responses for vulnerabilities
+- **Session Tracking**: Maintains authentication state
 
 ## 🏗️ Architecture
 

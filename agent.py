@@ -3,7 +3,6 @@ import json
 import time
 import base64
 import logging
-import yaml
 from logger import Logger
 from proxy import WebProxy
 from llm import LLM
@@ -57,18 +56,20 @@ class Agent:
         if disable_rag:
             print("[Info] 🚫 RAG knowledge fetching disabled")
             knowledge_summary = None
+            self.knowledge_base = None
         else:
             print("[Info] 🧠 Initializing security knowledge base...")
             try:
-                knowledge_base = initialize_knowledge_base()
-                knowledge_summary = knowledge_base.get_knowledge_summary()
+                self.knowledge_base = initialize_knowledge_base()
+                knowledge_summary = self.knowledge_base.get_knowledge_summary()
                 print("[Info] ✅ Security knowledge loaded successfully")
             except Exception as e:
                 print(f"[Warning] Failed to fetch security knowledge: {e}")
                 knowledge_summary = None
+                self.knowledge_base = None
         
         self.proxy = WebProxy(starting_url, logger)
-        self.llm = LLM(knowledge_summary=knowledge_summary)
+        self.llm = LLM(knowledge_content=knowledge_summary)
         self.planner = Planner(num_plans_target=self.num_plans, knowledge_summary=knowledge_summary)
         self.scanner = None
         self.tools = Tools()
@@ -111,6 +112,21 @@ class Agent:
             logger.info(f"Starting scan: {url}", color='cyan')
             scan_results = self.scanner.scan(url)
 
+            # Fetch contextual CVEs based on scanner findings
+            if self.knowledge_base:
+                try:
+                    logger.info("🎯 Fetching contextual CVEs based on application findings", color='cyan')
+                    scanner_context = self._build_scanner_context(scan_results, page)
+                    contextual_knowledge_summary = self.knowledge_base.get_contextual_knowledge_summary(scanner_context)
+                    
+                    # Update LLM and Planner with enhanced knowledge
+                    self.llm.knowledge_content = contextual_knowledge_summary
+                    self.planner.knowledge_summary = contextual_knowledge_summary
+                    
+                    logger.info("✅ Enhanced security knowledge with contextual CVEs", color='green')
+                except Exception as e:
+                    logger.info(f"⚠️  Failed to fetch contextual CVEs: {e}", color='yellow')
+
             # Add URLs to queue if expand_scope is enabled
             if self.expand_scope:
                 more_urls = scan_results["parsed_data"]["urls"]
@@ -139,20 +155,6 @@ class Agent:
             logger.info("Generating a plan for security testing", color='cyan')
             total_tokens += count_tokens(page_data)
             plans = self.planner.plan(page_data)
-
-            # Save plans to YAML file for analysis
-            plans_file = os.path.join(self.output_dir, f"plans_{url.replace('://', '_').replace('/', '_')}.yaml")
-            os.makedirs(self.output_dir, exist_ok=True)
-            
-            with open(plans_file, 'w') as f:
-                yaml.dump({
-                    'url': url,
-                    'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'),
-                    'num_plans_generated': len(plans),
-                    'plans': plans
-                }, f, default_flow_style=False, allow_unicode=True)
-            
-            logger.info(f"Plans saved to: {plans_file}", color='green')
 
             # Output the full plan first
             total_plans = len(plans)
@@ -230,3 +232,80 @@ class Agent:
         # Generate and save report
         logger.info("Generating summary report", color='yellow')
         self.reporter.generate_summary_report()
+
+    def _build_scanner_context(self, scan_results: dict, page) -> dict:
+        """
+        Build scanner context for contextual CVE fetching
+        
+        Args:
+            scan_results: Results from the scanner
+            page: Playwright page object to extract additional context
+            
+        Returns:
+            Dictionary containing scanner context for CVE filtering
+        """
+        context = {}
+        parsed_data = scan_results.get('parsed_data', {})
+        
+        # Extract technologies from parser
+        context['technologies'] = parsed_data.get('technologies', [])
+        context['javascript_libraries'] = parsed_data.get('javascript_libraries', [])
+        context['endpoints'] = parsed_data.get('endpoints', [])
+        context['forms'] = parsed_data.get('forms', [])
+        context['meta_info'] = parsed_data.get('meta_info', {})
+        
+        # Extract HTTP headers and server information
+        try:
+            # Get response headers from the current page
+            response = page.evaluate('''() => {
+                return {
+                    headers: Object.fromEntries(
+                        Array.from(document.querySelectorAll('meta[http-equiv]')).map(meta => [
+                            meta.getAttribute('http-equiv').toLowerCase(),
+                            meta.getAttribute('content')
+                        ])
+                    ),
+                    userAgent: navigator.userAgent,
+                    location: window.location.href
+                };
+            }''')
+            
+            context['headers'] = response.get('headers', {})
+            context['user_agent'] = response.get('userAgent', '')
+            
+        except Exception as e:
+            logger.info(f"Could not extract browser context: {e}", color='yellow')
+            context['headers'] = {}
+        
+        # Extract services from URL patterns and endpoints
+        services = set()
+        url = scan_results.get('url', '')
+        
+        # Infer services from URL and endpoints
+        if 'api' in url.lower():
+            services.add('REST API')
+        if any('admin' in endpoint.lower() for endpoint in context['endpoints']):
+            services.add('Admin Panel')
+        if any('upload' in endpoint.lower() for endpoint in context['endpoints']):
+            services.add('File Upload')
+        if context['forms']:
+            services.add('Web Forms')
+        
+        context['services'] = list(services)
+        
+        # Extract CMS information if detected
+        cms_info = {}
+        for tech in context['technologies']:
+            if any(cms in tech.lower() for cms in ['wordpress', 'drupal', 'joomla']):
+                cms_info['name'] = tech
+                # Try to extract version from meta info
+                for key, value in context['meta_info'].items():
+                    if 'version' in key.lower() and value:
+                        cms_info['version'] = value
+                        break
+                break
+        
+        if cms_info:
+            context['cms_info'] = cms_info
+        
+        return context

@@ -16,17 +16,17 @@ class LLM:
     and vulnerability discovery. Enhanced with live security knowledge from expert sources.
     """
 
-    def __init__(self, knowledge_summary: str = None):
+    def __init__(self, knowledge_content: Optional[str] = None):
         """Initialize the LLM client and system prompt with security knowledge.
         
         Args:
-            knowledge_summary (str): Pre-fetched security knowledge summary to include in system prompt
+            knowledge_content (str): Pre-fetched security knowledge summary to include in system prompt
         """
         self.client = OpenAI(api_key=OPENAI_API_KEY)
         
         # Use provided knowledge summary or fallback message
-        if knowledge_summary:
-            knowledge_content = knowledge_summary
+        if knowledge_content:
+            knowledge_content = knowledge_content
         else:
             knowledge_content = "## Security Knowledge Base unavailable - proceeding with standard techniques"
         
@@ -36,9 +36,9 @@ class LLM:
         {knowledge_content}
 
         ## Apply Your Security Knowledge
-        You have access to the latest security research and proven exploitation techniques from DevSec Blog and PortSwigger Web Security Academy. Apply this knowledge strategically:
+        You have access to the latest security research and proven exploitation techniques from PentestMonkey Cheat Sheets, CAPEC Attack Patterns, OWASP WSTG Techniques, and CISA KEV (Known Exploited Vulnerabilities). Apply this knowledge strategically:
         
-        - Use the API security patterns from DevSec articles to test authorization, authentication, and object-level access controls
+        - Use the API security patterns from PentestMonkey Cheat Sheets to test authorization, authentication, and object-level access controls
         - Apply PortSwigger lab techniques for injection attacks, XSS, CSRF, and other web vulnerabilities  
         - Leverage the compiled exploit techniques and payloads to test for specific vulnerability classes
         - Remember that real-world vulnerabilities often combine multiple techniques - think like an expert penetration tester
