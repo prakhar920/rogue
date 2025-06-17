@@ -65,7 +65,10 @@ class HTMLParser:
             'urls': self._extract_urls(soup),
             'forms': self._extract_forms(soup),
             'scripts': self._extract_scripts(soup),
-
+            'technologies': self._extract_technologies(soup),
+            'meta_info': self._extract_meta_info(soup),
+            'javascript_libraries': self._extract_js_libraries(soup),
+            'endpoints': self._extract_endpoints(soup),
         }
         return data
 
@@ -168,5 +171,120 @@ class HTMLParser:
                 seen_scripts.add(content)
                 
         return scripts
+        
+    def _extract_technologies(self, soup: BeautifulSoup) -> List[str]:
+        """Extract technology indicators from HTML content"""
+        technologies = set()
+        
+        # Check meta tags for technology indicators
+        for meta in soup.find_all('meta'):
+            name = meta.get('name', '').lower()
+            content = meta.get('content', '').lower()
+            
+            # Common CMS and framework indicators
+            if 'generator' in name and content:
+                technologies.add(content)
+            elif 'powered-by' in name and content:
+                technologies.add(content)
+        
+        # Check for common technology patterns in HTML
+        html_content = str(soup).lower()
+        
+        # CMS Detection
+        if 'wp-content' in html_content or 'wordpress' in html_content:
+            technologies.add('WordPress')
+        if 'drupal' in html_content:
+            technologies.add('Drupal')
+        if 'joomla' in html_content:
+            technologies.add('Joomla')
+        
+        # Framework Detection
+        if 'react' in html_content:
+            technologies.add('React')
+        if 'angular' in html_content:
+            technologies.add('Angular')
+        if 'vue' in html_content:
+            technologies.add('Vue.js')
+        if 'bootstrap' in html_content:
+            technologies.add('Bootstrap')
+        
+        # Server Technology Detection (from comments or script paths)
+        if 'php' in html_content:
+            technologies.add('PHP')
+        if 'asp.net' in html_content or 'aspx' in html_content:
+            technologies.add('ASP.NET')
+        if 'jsp' in html_content:
+            technologies.add('JSP')
+        
+        return list(technologies)
+    
+    def _extract_meta_info(self, soup: BeautifulSoup) -> Dict[str, str]:
+        """Extract meta information from HTML head"""
+        meta_info = {}
+        
+        for meta in soup.find_all('meta'):
+            name = meta.get('name', '')
+            content = meta.get('content', '')
+            
+            if name and content:
+                meta_info[name.lower()] = content
+        
+        return meta_info
+    
+    def _extract_js_libraries(self, soup: BeautifulSoup) -> List[str]:
+        """Extract JavaScript libraries from script sources"""
+        libraries = set()
+        
+        for script in soup.find_all('script', src=True):
+            src = script['src'].lower()
+            
+            # Common JS libraries
+            if 'jquery' in src:
+                libraries.add('jQuery')
+            elif 'react' in src:
+                libraries.add('React')
+            elif 'angular' in src:
+                libraries.add('Angular')
+            elif 'vue' in src:
+                libraries.add('Vue.js')
+            elif 'bootstrap' in src:
+                libraries.add('Bootstrap')
+            elif 'lodash' in src:
+                libraries.add('Lodash')
+            elif 'moment' in src:
+                libraries.add('Moment.js')
+            elif 'd3' in src:
+                libraries.add('D3.js')
+        
+        return list(libraries)
+    
+    def _extract_endpoints(self, soup: BeautifulSoup) -> List[str]:
+        """Extract potential API endpoints and interesting paths"""
+        endpoints = set()
+        
+        # Extract from form actions
+        for form in soup.find_all('form'):
+            action = form.get('action', '')
+            if action and action != '#':
+                endpoints.add(action)
+        
+        # Extract from AJAX calls in script content
+        for script in soup.find_all('script'):
+            if script.string:
+                content = script.string
+                # Look for common AJAX patterns
+                ajax_patterns = [
+                    r'["\']([^"\']*(?:api|ajax|endpoint)[^"\']*)["\']',
+                    r'url\s*:\s*["\']([^"\']+)["\']',
+                    r'fetch\s*\(\s*["\']([^"\']+)["\']',
+                    r'\.get\s*\(\s*["\']([^"\']+)["\']',
+                    r'\.post\s*\(\s*["\']([^"\']+)["\']'
+                ]
+                
+                for pattern in ajax_patterns:
+                    matches = re.findall(pattern, content, re.IGNORECASE)
+                    endpoints.update(matches)
+        
+        return list(endpoints)
         
    

@@ -29,8 +29,8 @@ class Agent:
     def __init__(self, starting_url: str, expand_scope: bool = False, 
                  enumerate_subdomains: bool = False, model: str = 'o3-mini',
                  output_dir: str = 'security_results', max_iterations: int = 10,
-                 enable_baseline_checks: bool = True, max_plans: int = None,
-                 enable_rag: bool = True):
+                 num_plans: int = 10, disable_rag: bool = False,
+                 enable_baseline_checks: bool = True, max_plans: int = None):
         """
         Initialize the security testing agent.
 
@@ -41,9 +41,10 @@ class Agent:
             model: LLM model to use for analysis
             output_dir: Directory to save scan results
             max_iterations: Maximum iterations per test plan
+            num_plans: Number of security testing plans to generate per page (default: 10)
+            disable_rag: Whether to disable RAG knowledge fetching (default: False)
             enable_baseline_checks: Whether to always include OWASP Top 10 baseline checks (default: True)
             max_plans: Maximum number of plans to generate (default: None, unlimited)
-            enable_rag: Whether to enable RAG retrieval knowledge fetcher (default: True)
         """
         self.starting_url = starting_url
         self.expand_scope = expand_scope
@@ -51,35 +52,38 @@ class Agent:
         self.model = model
         self.output_dir = output_dir
         self.max_iterations = max_iterations
+        self.num_plans = num_plans
         self.enable_baseline_checks = enable_baseline_checks
-        self.max_plans = max_plans
-        self.enable_rag = enable_rag
+        self.max_plans = max_plans if max_plans is not None else num_plans
+        self.enable_rag = not disable_rag
         self.keep_messages = 15
 
-        # Conditionally fetch security knowledge based on enable_rag flag
-        knowledge_summary = None
-        knowledge_base_instance = None
-        if enable_rag:
+        # Fetch security knowledge once at initialization (unless disabled)
+        if disable_rag:
+            print("[Info] 🚫 RAG knowledge fetching disabled")
+            knowledge_summary = None
+            self.knowledge_base = None
+        else:
             print("[Info] 🧠 Initializing security knowledge base...")
             try:
-                knowledge_base_instance = initialize_knowledge_base()
-                knowledge_summary = knowledge_base_instance.get_knowledge_summary()
+                self.knowledge_base = initialize_knowledge_base()
+                knowledge_summary = self.knowledge_base.get_knowledge_summary()
                 print("[Info] ✅ Security knowledge loaded successfully")
             except Exception as e:
                 print(f"[Warning] Failed to fetch security knowledge: {e}")
                 knowledge_summary = None
-        else:
-            print("[Info] 🚀 RAG disabled - running without knowledge base for faster startup")
+                self.knowledge_base = None
         
         self.proxy = WebProxy(starting_url, logger)
-        self.llm = LLM(knowledge_summary=knowledge_summary)
-        self.planner = Planner(knowledge_summary=knowledge_summary, 
+        self.llm = LLM(knowledge_content=knowledge_summary)
+        self.planner = Planner(num_plans_target=self.max_plans, 
+                              knowledge_summary=knowledge_summary,
                               enable_baseline_checks=enable_baseline_checks,
-                              max_plans=max_plans)
+                              max_plans=self.max_plans)
         
         # Pass knowledge base to planner if RAG is enabled
-        if enable_rag and knowledge_base_instance is not None:
-            self.planner.knowledge_base = knowledge_base_instance
+        if self.enable_rag and self.knowledge_base is not None:
+            self.planner.knowledge_base = self.knowledge_base
             
         self.scanner = None
         self.tools = Tools()
@@ -121,6 +125,21 @@ class Agent:
 
             logger.info(f"Starting scan: {url}", color='cyan')
             scan_results = self.scanner.scan(url)
+
+            # Fetch contextual CVEs based on scanner findings
+            if self.knowledge_base:
+                try:
+                    logger.info("🎯 Fetching contextual CVEs based on application findings", color='cyan')
+                    scanner_context = self._build_scanner_context(scan_results, page)
+                    contextual_knowledge_summary = self.knowledge_base.get_contextual_knowledge_summary(scanner_context)
+                    
+                    # Update LLM and Planner with enhanced knowledge
+                    self.llm.knowledge_content = contextual_knowledge_summary
+                    self.planner.knowledge_summary = contextual_knowledge_summary
+                    
+                    logger.info("✅ Enhanced security knowledge with contextual CVEs", color='green')
+                except Exception as e:
+                    logger.info(f"⚠️  Failed to fetch contextual CVEs: {e}", color='yellow')
 
             # Add URLs to queue if expand_scope is enabled
             if self.expand_scope:
@@ -166,6 +185,83 @@ class Agent:
         # Generate and save report
         logger.info("Generating summary report", color='yellow')
         self.reporter.generate_summary_report()
+
+    def _build_scanner_context(self, scan_results: dict, page) -> dict:
+        """
+        Build scanner context for contextual CVE fetching
+        
+        Args:
+            scan_results: Results from the scanner
+            page: Playwright page object to extract additional context
+            
+        Returns:
+            Dictionary containing scanner context for CVE filtering
+        """
+        context = {}
+        parsed_data = scan_results.get('parsed_data', {})
+        
+        # Extract technologies from parser
+        context['technologies'] = parsed_data.get('technologies', [])
+        context['javascript_libraries'] = parsed_data.get('javascript_libraries', [])
+        context['endpoints'] = parsed_data.get('endpoints', [])
+        context['forms'] = parsed_data.get('forms', [])
+        context['meta_info'] = parsed_data.get('meta_info', {})
+        
+        # Extract HTTP headers and server information
+        try:
+            # Get response headers from the current page
+            response = page.evaluate('''() => {
+                return {
+                    headers: Object.fromEntries(
+                        Array.from(document.querySelectorAll('meta[http-equiv]')).map(meta => [
+                            meta.getAttribute('http-equiv').toLowerCase(),
+                            meta.getAttribute('content')
+                        ])
+                    ),
+                    userAgent: navigator.userAgent,
+                    location: window.location.href
+                };
+            }''')
+            
+            context['headers'] = response.get('headers', {})
+            context['user_agent'] = response.get('userAgent', '')
+            
+        except Exception as e:
+            logger.info(f"Could not extract browser context: {e}", color='yellow')
+            context['headers'] = {}
+        
+        # Extract services from URL patterns and endpoints
+        services = set()
+        url = scan_results.get('url', '')
+        
+        # Infer services from URL and endpoints
+        if 'api' in url.lower():
+            services.add('REST API')
+        if any('admin' in endpoint.lower() for endpoint in context['endpoints']):
+            services.add('Admin Panel')
+        if any('upload' in endpoint.lower() for endpoint in context['endpoints']):
+            services.add('File Upload')
+        if context['forms']:
+            services.add('Web Forms')
+        
+        context['services'] = list(services)
+        
+        # Extract CMS information if detected
+        cms_info = {}
+        for tech in context['technologies']:
+            if any(cms in tech.lower() for cms in ['wordpress', 'drupal', 'joomla']):
+                cms_info['name'] = tech
+                # Try to extract version from meta info
+                for key, value in context['meta_info'].items():
+                    if 'version' in key.lower() and value:
+                        cms_info['version'] = value
+                        break
+                break
+        
+        if cms_info:
+            context['cms_info'] = cms_info
+        
+        return context
 
     def _execute_single_plan(self, plan: dict, page, plan_index: int, total_plans: int) -> str:
         """Execute a single security test plan and return a summary of results."""

@@ -20,20 +20,78 @@ def main():
     ╚══════════════════════════════════════════════════════════════════════╝
     """
     
-    parser = argparse.ArgumentParser(description='Rogue - LLM Powered Security Scanner')
-    parser.add_argument('-u', '--url', required=True, help='Target URL to scan')
-    parser.add_argument('-o', '--output', default='security_results', help='Output directory for results')
-    parser.add_argument('-m', '--model', default='o4-mini', help='LLM model to use')
-    parser.add_argument('--expand-scope', action='store_true', help='Expand scope to discovered URLs')
-    parser.add_argument('--enumerate-subdomains', action='store_true', help='Enumerate and test subdomains')
-    parser.add_argument('--max-iterations', type=int, default=10, help='Maximum iterations per plan')
-    parser.add_argument('--disable-baseline-checks', action='store_true', 
-                        help='Disable OWASP Top 10 baseline security checks')
-    parser.add_argument('--max-plans', type=int, default=None,
-                        help='Maximum number of plans to generate (default: unlimited)')
-    parser.add_argument('--disable-rag', action='store_true',
-                        help='Disable RAG knowledge fetcher for faster startup')
+    parser = argparse.ArgumentParser(
+        description='AI-Powered Web Application Security Testing Agent',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog='''
+Examples:
+    # Quick security assessment (5 plans, 3 iterations each)
+    python run.py -u https://example.com -p 5 -i 3
+
+    # Standard comprehensive scan (10 plans, 10 iterations)
+    python run.py -u https://example.com -p 10 -i 10
+
+    # Unlimited plans with contextual CVE intelligence (15-25+ plans)
+    python run.py -u https://example.com -p -1 -i 5
+
+    # Deep security audit with scope expansion
+    python run.py -u https://example.com -p -1 -i 10 -e -s
+
+    # Targeted research with advanced model
+    python run.py -u https://example.com -p 20 -i 15 -m o1-preview
+
+    # Custom output directory with subdomain enumeration
+    python run.py -u https://example.com -s -o "results/$(date +%Y%m%d)" -p -1
+        '''
+    )
     
+    parser.add_argument('-u', '--url', 
+                        required=True,
+                        help='Target URL to test')
+
+    parser.add_argument('-e', '--expand',
+                        action='store_true',
+                        default=False,
+                        help='Expand testing to discovered URLs')
+    
+    parser.add_argument('-s', '--subdomains',
+                        action='store_true',
+                        default=False,
+                        help='Perform subdomain enumeration')
+
+    parser.add_argument('-m', '--model',
+                        choices=['o3-mini', 'o1-preview', 'o4-mini'],
+                        default='o4-mini',
+                        help='LLM model to use (default: o4-mini)')
+    
+    parser.add_argument('-o', '--output',
+                        default='security_results',
+                        help='Output directory for results (default: security_results)')
+    
+    parser.add_argument('-i', '--max-iterations',
+                        type=int,
+                        default=10,
+                        help='Maximum iterations per plan of attack (default: 10)')
+
+    parser.add_argument('-p', '--num-plans',
+                        type=int,
+                        default=10,
+                        help='Number of security testing plans to generate per page. Use -1 for unlimited plans (15-25+ comprehensive tests with contextual CVE intelligence). Default: 10')
+
+    parser.add_argument('--disable-baseline-checks', 
+                        action='store_true', 
+                        help='Disable OWASP Top 10 baseline security checks')
+    
+    parser.add_argument('--max-plans', 
+                        type=int, 
+                        default=None,
+                        help='Maximum number of plans to generate (default: unlimited)')
+
+    parser.add_argument('--disable-rag',
+                        action='store_true',
+                        default=False,
+                        help='Disable RAG knowledge fetching for faster startup')
+
     args = parser.parse_args()
 
     # Validation
@@ -49,11 +107,14 @@ def main():
     print(f"[*] Target URL: {args.url}")
     print(f"[*] Using model: {args.model}")
     
-    if args.max_plans:
+    if args.num_plans == -1:
+        print(f"[*] Plans per page: Unlimited (15-25+ comprehensive tests with contextual CVE intelligence)")
+    elif args.max_plans:
         print(f"[*] Plans per page: {args.max_plans}")
     else:
-        print(f"[*] Plans per page: Dynamic (based on page complexity)")
+        print(f"[*] Plans per page: {args.num_plans} (or dynamic based on page complexity)")
     
+    print(f"[*] Max iterations per plan: {args.max_iterations}")
     print(f"[*] Results will be saved to: {args.output}")
     
     # Check if OpenAI API key is set
@@ -63,17 +124,18 @@ def main():
         print("export OPENAI_API_KEY='your-api-key-here'")
         return
     
-    # Create agent with options
+    # Create agent with options - combining both parameter sets
     agent = Agent(
         starting_url=args.url,
-        expand_scope=args.expand_scope,
-        enumerate_subdomains=args.enumerate_subdomains,
+        expand_scope=args.expand,
+        enumerate_subdomains=args.subdomains,
         model=args.model,
         output_dir=args.output,
         max_iterations=args.max_iterations,
+        num_plans=args.num_plans,
         enable_baseline_checks=not args.disable_baseline_checks,
         max_plans=args.max_plans,
-        enable_rag=not args.disable_rag
+        disable_rag=args.disable_rag
     )
     
     # Run the scan

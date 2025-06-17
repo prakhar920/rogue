@@ -128,10 +128,6 @@ security_results*/
 optimized_test_results/
 enhanced_test_results/
 
-# Plan files (YAML files containing security test plans)
-plans_*.yaml
-*.plans.yaml
-
 # Test and log files
 *.log
 *.tmp

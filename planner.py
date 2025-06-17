@@ -41,7 +41,8 @@ class Planner:
     """
     
     def __init__(self, knowledge_summary: Optional[str] = None, 
-                 enable_baseline_checks: bool = True, max_plans: int = None):
+                 enable_baseline_checks: bool = True, max_plans: int = None,
+                 num_plans_target: int = 10):
         """
         Initialize the planner.
         
@@ -49,10 +50,12 @@ class Planner:
             knowledge_summary: Optional security knowledge base summary
             enable_baseline_checks: Whether to always include OWASP Top 10 baseline checks
             max_plans: Maximum number of plans to generate (None = unlimited)
+            num_plans_target: Target number of security testing plans to generate (default: 10, use -1 for unlimited)
         """
         self.knowledge_summary = knowledge_summary
         self.enable_baseline_checks = enable_baseline_checks
         self.max_plans = max_plans
+        self.num_plans_target = num_plans_target if num_plans_target is not None else (max_plans if max_plans is not None else 10)
         self.knowledge_base = None  # Will be set by agent if RAG enabled
         
         # Initialize OpenAI client
@@ -121,6 +124,43 @@ class Planner:
         """
         
         self.knowledge_content = knowledge_content
+        
+        # Determine plan count instruction
+        if self.num_plans_target <= 0:
+            plan_instruction = "as many comprehensive security test plans as possible (aim for 15-25+ distinct plans)"
+        else:
+            plan_instruction = f"{self.num_plans_target} distinct security test plans"
+        
+        self.system_prompt = f"""
+        You are an expert bug bounty hunter with years of experience finding critical vulnerabilities in web applications. Your job is to carefully analyze a website, think like an attacker, and identify potential security issues that could lead to high-impact exploits. You will be provided details about our internal company that we're testing, so think creatively about how the application could be abused.
+
+        Based on the provided page content, generate {plan_instruction}. Each plan should focus on a specific vulnerability type or attack vector.
+
+        Consider testing for:
+        - SQL Injection (authentication bypass, data extraction, blind techniques)
+        - Cross-Site Scripting (reflected, stored, DOM-based)
+        - Authentication and authorization flaws
+        - Directory traversal and path manipulation
+        - Command injection and code execution
+        - Business logic vulnerabilities
+        - CSRF and state management issues
+        - Information disclosure
+        - Input validation bypasses
+        - Session management weaknesses
+
+        For each plan, provide:
+        1. title: A clear, specific test plan name
+        2. description: Detailed methodology explaining what to test and how
+
+        Return your response as a YAML list of plans:
+        ```yaml
+        - title: "Plan Title 1"
+          description: "Detailed description of what to test and methodology..."
+        - title: "Plan Title 2"  
+          description: "Detailed description of what to test and methodology..."
+        ```
+
+        Focus on plans that are most likely to yield high-impact vulnerabilities given the page content and functionality observed."""
 
     def _assess_page_complexity(self, page_data: str) -> int:
         """
@@ -184,133 +224,112 @@ class Planner:
             num_plans (int): Number of additional plans to generate
             
         Returns:
-            List[Dict]: List of additional testing plans
+            List[Dict]: Generated security test plans
         """
-        # Get technology-specific knowledge if RAG is enabled
-        knowledge_content = self._get_contextual_knowledge(page_data)
-        
+        if num_plans <= 0:
+            return []
+            
+        # Create dynamic system prompt for context-specific plans
         dynamic_prompt = f"""
-        {knowledge_content}
-        
-        You are an expert security researcher analyzing a web application for advanced vulnerabilities beyond the OWASP Top 10 baseline checks.
+        You are an expert penetration tester. Based on the page content analysis below, generate exactly {num_plans} highly targeted security test plans that are specifically relevant to the technologies and functionality you observe.
 
-        Based on the provided page content and technology stack, generate {num_plans} highly targeted security test plans that are specifically relevant to this application's attack surface and technology.
+        {self.knowledge_content}
 
         Focus on:
-        - Technology-specific vulnerabilities (e.g., .NET ViewState, PHP deserialization, Node.js prototype pollution)
-        - Framework-specific attacks (e.g., WordPress plugin vulnerabilities, Django template injection)
-        - Modern web application attack vectors (e.g., GraphQL introspection, JWT manipulation, API rate limiting bypasses)
-        - Business logic specific to this application type
-        - Advanced injection techniques beyond basic SQLi/XSS
-        - Cloud and infrastructure specific attacks if indicators are present
+        - Technology-specific vulnerabilities (based on detected stack)
+        - Functionality-specific attack vectors (based on observed features)
+        - Context-appropriate testing techniques
+        - High-impact exploitation scenarios
 
-        **Page Data:**
-        {page_data}
-
-        **Response Format:**
-        Return ONLY a valid YAML list of security test plans. Each plan must have exactly these fields:
+        Generate exactly {num_plans} distinct plans. Each plan should be highly specific to the page content provided.
         
+        Return as YAML:
         ```yaml
-        - title: "Brief Descriptive Title"
-          description: "Detailed description of what to test, specific techniques to use, and expected outcomes. Include exact payloads, parameter names, and step-by-step testing methodology."
+        - title: "Specific Plan Title"
+          description: "Detailed context-specific methodology..."
         ```
-
-        **Requirements:**
-        - Each plan must be actionable with specific testing steps
-        - Include exact parameter names, endpoints, and payloads where possible
-        - Focus on high-impact vulnerabilities likely to exist in this technology stack
-        - Prioritize novel and advanced attack vectors over basic scanning
         """
-
+        
         try:
             response = self.client.chat.completions.create(
-                model="o3-mini",
-                messages=[{"role": "user", "content": dynamic_prompt}],
-                max_tokens=3000,
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": dynamic_prompt},
+                    {"role": "user", "content": page_data}
+                ],
+                max_tokens=4000,
                 temperature=0.8
             )
             
-            plans_text = response.choices[0].message.content.strip()
+            response_text = response.choices[0].message.content
             
-            # Remove markdown code block formatting if present
-            if plans_text.startswith("```yaml"):
-                plans_text = plans_text.replace("```yaml", "", 1)
-            if plans_text.endswith("```"):
-                plans_text = plans_text.rsplit("```", 1)[0]
-            
-            plans_text = plans_text.strip()
-            
-            # Parse YAML
-            additional_plans = yaml.safe_load(plans_text)
-            
-            if not isinstance(additional_plans, list):
-                print("Warning: Dynamic plans response was not a list, falling back to empty list")
+            # Extract YAML content
+            yaml_match = re.search(r'```yaml\n(.*?)\n```', response_text, re.DOTALL)
+            if yaml_match:
+                yaml_content = yaml_match.group(1)
+                plans = yaml.safe_load(yaml_content)
+                return plans if isinstance(plans, list) else []
+            else:
+                print("No valid YAML found in response")
                 return []
                 
-            return additional_plans
-            
         except Exception as e:
             print(f"Error generating dynamic plans: {e}")
             return []
 
-    def _get_contextual_knowledge(self, page_data: str) -> str:
-        """Get contextual knowledge including technology-specific info."""
-        knowledge_parts = []
-        
-        # Add static knowledge base content
-        knowledge_parts.append("=== SECURITY KNOWLEDGE BASE ===")
-        knowledge_parts.append(self.knowledge_content)
-        
-        # Add technology-specific knowledge if RAG is enabled
-        if self.knowledge_base:
-            try:
-                tech_knowledge = self.knowledge_base.get_technology_specific_knowledge(page_data)
-                if tech_knowledge and tech_knowledge != "No specific technology vulnerabilities found.":
-                    knowledge_parts.append("\n=== TECHNOLOGY-SPECIFIC VULNERABILITIES ===")
-                    knowledge_parts.append(tech_knowledge)
-                    knowledge_parts.append("\nUse this technology-specific intelligence to:")
-                    knowledge_parts.append("- Target known CVEs for the detected technology stack")
-                    knowledge_parts.append("- Focus on framework-specific attack vectors")
-                    knowledge_parts.append("- Prioritize high-impact vulnerabilities relevant to this technology")
-            except Exception as e:
-                print(f"Warning: Could not fetch technology-specific knowledge: {e}")
-        
-        return "\n".join(knowledge_parts)
-
-    @retry_on_yaml_error(max_retries=3)
-    def plan(self, page_data: str) -> list:
+    def plan(self, page_data: str) -> List[Dict]:
         """
-        Generate a comprehensive security testing plan with baseline OWASP Top 10 checks 
-        and additional context-specific tests.
+        Generate a comprehensive list of security testing plans.
         
         Args:
-            page_data (str): Information about the page being tested
+            page_data (str): Information about the page to test
             
         Returns:
-            list: Complete list of security test plans
+            List[Dict]: List of security test plans
         """
         all_plans = []
         
-        # Always include OWASP Top 10 baseline checks if enabled
+        # Always include baseline OWASP Top 10 checks if enabled
         if self.enable_baseline_checks:
             all_plans.extend(self.baseline_checks)
-            
-        # Assess page complexity to determine number of additional plans needed
-        if self.max_plans is None:
-            # Dynamic planning based on page complexity
-            num_additional_plans = self._assess_page_complexity(page_data)
+        
+        # Assess page complexity to determine how many additional plans to generate
+        if self.num_plans_target > 0:
+            # Fixed number of plans requested
+            additional_plans_needed = max(0, self.num_plans_target - len(all_plans))
         else:
-            # Use specified max_plans, accounting for baseline checks
-            baseline_count = len(self.baseline_checks) if self.enable_baseline_checks else 0
-            num_additional_plans = max(0, self.max_plans - baseline_count)
-            
+            # Dynamic based on complexity
+            additional_plans_needed = self._assess_page_complexity(page_data)
+        
         # Generate additional context-specific plans
-        if num_additional_plans > 0:
-            additional_plans = self._generate_dynamic_plans(page_data, num_additional_plans)
-            all_plans.extend(additional_plans)
-            
-        # Apply max_plans limit if specified
-        if self.max_plans is not None:
+        if additional_plans_needed > 0:
+            dynamic_plans = self._generate_dynamic_plans(page_data, additional_plans_needed)
+            all_plans.extend(dynamic_plans)
+        
+        # Apply max_plans limit if set
+        if self.max_plans and self.max_plans > 0:
             all_plans = all_plans[:self.max_plans]
-            
+        
+        # Apply num_plans_target limit if set
+        if self.num_plans_target > 0:
+            all_plans = all_plans[:self.num_plans_target]
+        
         return all_plans
+
+    @retry_on_yaml_error(max_retries=3)
+    def _try_parse_yaml(self, yaml_content: str) -> List[Dict]:
+        """
+        Attempt to parse YAML content with retry logic.
+        
+        Args:
+            yaml_content (str): YAML content to parse
+            
+        Returns:
+            List[Dict]: Parsed plans or empty list on failure
+        """
+        try:
+            plans = yaml.safe_load(yaml_content)
+            return plans if isinstance(plans, list) else []
+        except yaml.YAMLError:
+            # Let the decorator handle retries
+            raise

@@ -16,29 +16,30 @@ class LLM:
     and vulnerability discovery. Enhanced with live security knowledge from expert sources.
     """
 
-    def __init__(self, knowledge_summary: str = None):
+    def __init__(self, knowledge_content: Optional[str] = None):
         """Initialize the LLM client and system prompt with security knowledge.
         
         Args:
-            knowledge_summary (str): Pre-fetched security knowledge summary to include in system prompt
+            knowledge_content (str): Pre-fetched security knowledge summary to include in system prompt
         """
         self.client = OpenAI(api_key=OPENAI_API_KEY)
         
         # Use provided knowledge summary or fallback message
-        if knowledge_summary:
-            knowledge_content = knowledge_summary
+        if knowledge_content:
+            self.knowledge_content = knowledge_content
         else:
-            knowledge_content = "## Security Knowledge Base unavailable - proceeding with standard techniques"
+            self.knowledge_content = "## Security Knowledge Base unavailable - proceeding with standard techniques"
         
         self.system_prompt = f"""
         You are a security researcher who is also the lead for an internal red team and the security team. Your job is to carefully scan a website, step by step, and evaluate if there are any security issues. You will be provided a lot of details about our internal company that we're testing, so feel free to fuzz, probe, and test the website. Here are just some of the concerns we want to focus on from web perspective.
 
-        {knowledge_content}
+        {self.knowledge_content}
 
         ## Apply Your Security Knowledge
-        You have access to the latest security research and proven exploitation techniques from DevSec Blog, PentestMonkey, CAPEC, and OWASP WSTG. Apply this knowledge strategically:
+        You have access to the latest security research and proven exploitation techniques from PentestMonkey Cheat Sheets, CAPEC Attack Patterns, OWASP WSTG Techniques, CISA KEV (Known Exploited Vulnerabilities), DevSec Blog, and PortSwigger labs. Apply this knowledge strategically:
         
-        - Apply practical payloads and techniques for injection attacks, XSS, CSRF, and other web vulnerabilities
+        - Use the API security patterns from PentestMonkey Cheat Sheets to test authorization, authentication, and object-level access controls
+        - Apply PortSwigger lab techniques and practical payloads for injection attacks, XSS, CSRF, and other web vulnerabilities  
         - Leverage the compiled exploit techniques and payloads to test for specific vulnerability classes
         - Remember that real-world vulnerabilities often combine multiple techniques - think like an expert penetration tester
 
