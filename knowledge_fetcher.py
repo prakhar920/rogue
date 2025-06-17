@@ -8,7 +8,7 @@ import requests
 from bs4 import BeautifulSoup
 import time
 import re
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
 from urllib.parse import urljoin, urlparse
 import logging
 
@@ -20,10 +20,13 @@ class SecurityKnowledgeBase:
     
     def __init__(self):
         self.knowledge = {
+            "exploit_techniques": [],
+            "payloads": [],
             "pentestmonkey_cheatsheets": [],
             "capec_attack_patterns": [],
             "owasp_wstg_techniques": [],
-            "cisa_kev_web_vulns": []
+            "cisa_kev_web_vulns": [],
+            "last_updated": None
         }
         
     def build_knowledge_base(self, shared_memory_context: Optional[Dict] = None):
@@ -185,24 +188,22 @@ class SecurityKnowledgeBase:
                         "description": vuln.get('shortDescription', ''),
                         "vendor_project": vuln.get('vendorProject', ''),
                         "product": vuln.get('product', ''),
-                        "date_added": vuln.get('dateAdded'),
+                        "date_added": vuln.get('dateAdded', ''),
+                        "due_date": vuln.get('dueDate', ''),
                         "required_action": vuln.get('requiredAction', ''),
-                        "relevance_score": relevance_score,
-                        "matching_keywords": [kw for kw in context_keywords if kw.lower() in search_text]
+                        "relevance_score": relevance_score
                     })
             
-            # Sort by relevance score and limit results
+            # Sort by relevance score (highest first) and limit results
             relevant_cves.sort(key=lambda x: x['relevance_score'], reverse=True)
-            relevant_cves = relevant_cves[:25]  # Top 25 most relevant
+            top_cves = relevant_cves[:20]  # Limit to top 20 most relevant
             
-            # Update knowledge base
-            self.knowledge["cisa_kev_web_vulns"] = relevant_cves
-            print(f"[Info] ✅ Fetched {len(relevant_cves)} contextually relevant CVEs")
+            print(f"[Info] 🎯 Found {len(top_cves)} contextually relevant CVEs from CISA KEV")
             
-            return relevant_cves
+            return top_cves
             
         except Exception as e:
-            print(f"[Error] Failed to fetch contextual CVEs: {e}")
+            print(f"[Warning] Failed to fetch CISA KEV data: {e}")
             return []
     
     def _build_context_keywords(self, scanner_context: Dict) -> List[str]:

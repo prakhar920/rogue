@@ -29,7 +29,8 @@ class Agent:
     def __init__(self, starting_url: str, expand_scope: bool = False, 
                  enumerate_subdomains: bool = False, model: str = 'o3-mini',
                  output_dir: str = 'security_results', max_iterations: int = 10,
-                 num_plans: int = 10, disable_rag: bool = False):
+                 num_plans: int = 10, disable_rag: bool = False,
+                 enable_baseline_checks: bool = True, max_plans: int = None):
         """
         Initialize the security testing agent.
 
@@ -42,6 +43,8 @@ class Agent:
             max_iterations: Maximum iterations per test plan
             num_plans: Number of security testing plans to generate per page (default: 10)
             disable_rag: Whether to disable RAG knowledge fetching (default: False)
+            enable_baseline_checks: Whether to always include OWASP Top 10 baseline checks (default: True)
+            max_plans: Maximum number of plans to generate (default: None, unlimited)
         """
         self.starting_url = starting_url
         self.expand_scope = expand_scope
@@ -50,6 +53,9 @@ class Agent:
         self.output_dir = output_dir
         self.max_iterations = max_iterations
         self.num_plans = num_plans
+        self.enable_baseline_checks = enable_baseline_checks
+        self.max_plans = max_plans if max_plans is not None else num_plans
+        self.enable_rag = not disable_rag
         self.keep_messages = 15
 
         # Fetch security knowledge once at initialization (unless disabled)
@@ -70,7 +76,15 @@ class Agent:
         
         self.proxy = WebProxy(starting_url, logger)
         self.llm = LLM(knowledge_content=knowledge_summary)
-        self.planner = Planner(num_plans_target=self.num_plans, knowledge_summary=knowledge_summary)
+        self.planner = Planner(num_plans_target=self.max_plans, 
+                              knowledge_summary=knowledge_summary,
+                              enable_baseline_checks=enable_baseline_checks,
+                              max_plans=self.max_plans)
+        
+        # Pass knowledge base to planner if RAG is enabled
+        if self.enable_rag and self.knowledge_base is not None:
+            self.planner.knowledge_base = self.knowledge_base
+            
         self.scanner = None
         self.tools = Tools()
         self.history = []
@@ -154,80 +168,19 @@ class Agent:
             # Add the plan to the history
             logger.info("Generating a plan for security testing", color='cyan')
             total_tokens += count_tokens(page_data)
+            
+            # Use traditional single-shot planning
             plans = self.planner.plan(page_data)
-
+            
             # Output the full plan first
             total_plans = len(plans)
             for index, plan in enumerate(plans):
                 logger.info(f"Plan {index + 1}/{total_plans}: {plan['title']}", color='light_magenta')
 
+            # Execute all plans
             for index, plan in enumerate(plans):
-                # Reset history when we are in a new plan
-                self.history = self.history[:2]
-
-                # Execute plan
-                logger.info(f"{index + 1}/{total_plans}: {plan['title']}", color='cyan')
-                self.history.append({"role": "assistant", "content": f"I will now start exploring the ```{plan['title']} - {plan['description']}``` and see if I can find any issues around it. Are we good to go?"})
-                self.history.append({"role": "user", "content": "Sure, let us start exploring this by trying out some tools. We must stick to the plan and do not deviate from it. Once we are done, simply call the completed function."})
-                
-                # Execute the plan iterations
-                iterations = 0
-                while iterations < self.max_iterations:
-                    # Manage history size - keep first 4 messages
-                    if len(self.history) > self.keep_messages:
-                        # First four messages are important and we need to keep them
-                        keep_from_end = self.keep_messages - 4
-                        self.history = self.history[:4] + Summarizer().summarize_conversation(self.history[4:-keep_from_end]) + self.history[-keep_from_end:]
-                        
-                    # Send the request to the LLM
-                    plan_tokens = count_tokens(self.history)
-                    total_tokens += plan_tokens
-                    logger.info(f"Total tokens used till now: {total_tokens:,}, current query tokens: {plan_tokens:,}", color='red')
-
-                    llm_response = self.llm.reason(self.history)
-                    self.history.append({"role": "assistant", "content": llm_response})
-                    logger.info(f"{llm_response}", color='light_blue')
-
-                    # Extract and execute the tool use from the LLM response
-                    tool_use = self.tools.extract_tool_use(llm_response)
-                    logger.info(f"{tool_use}", color='yellow')
-
-                    tool_output = str(self.tools.execute_tool(page, tool_use))
-                    logger.info(f"{tool_output[:250]}{'...' if len(tool_output) > 250 else ''}", color='yellow')
-
-                    total_tokens += count_tokens(tool_output)
-                    
-                    tool_output_summarized = Summarizer().summarize(llm_response, tool_use, tool_output)
-                    self.history.append({"role": "user", "content": tool_output_summarized})
-                    logger.info(f"{tool_output_summarized}", color='cyan')       
-
-                    if tool_output == "Completed":
-                        total_tokens += count_tokens(self.history[2:])
-                        successful_exploit, report = self.reporter.report(self.history[2:])
-                        logger.info(f"Analysis of the issue the agent has found: {report}", color='green')
-                        
-                        if successful_exploit:
-                            logger.info("Completed, moving onto the next plan!", color='yellow')
-                            break
-                        else:
-                            logger.info("Need to work harder on the exploit.", color='red')
-                            self.history.append({"role": "user", "content": report + "\n. Lets do better, again!"})
-                    
-                    # Print traffic
-                    wait_for_network_idle(page)
-                    traffic = self.proxy.pretty_print_traffic()
-                    if traffic:
-                        logger.info(traffic, color='cyan')
-                        self.history.append({"role": "user", "content": traffic})
-                        total_tokens += count_tokens(traffic)
-                    # Clear proxy
-                    self.proxy.clear()
-
-                    # Continue
-                    iterations += 1
-                    if iterations >= self.max_iterations:
-                        logger.info("Max iterations reached, moving onto the next plan!", color='red')
-                        break
+                self._execute_single_plan(plan, page, index + 1, total_plans)
+                total_tokens += count_tokens(self.history[2:])
 
         # Generate and save report
         logger.info("Generating summary report", color='yellow')
@@ -309,3 +262,76 @@ class Agent:
             context['cms_info'] = cms_info
         
         return context
+
+    def _execute_single_plan(self, plan: dict, page, plan_index: int, total_plans: int) -> str:
+        """Execute a single security test plan and return a summary of results."""
+        # Reset history when we are in a new plan
+        self.history = self.history[:2]
+        
+        # Execute plan
+        logger.info(f"{plan_index}/{total_plans}: {plan['title']}", color='cyan')
+        
+        self.history.append({"role": "assistant", "content": f"I will now start exploring the ```{plan['title']} - {plan['description']}``` and see if I can find any issues around it. Are we good to go?"})
+        self.history.append({"role": "user", "content": f"Current plan: {plan['title']} - {plan['description']}"})
+        
+        # Execute the plan iterations
+        iterations = 0
+        result_summary = "No significant findings"
+        
+        while iterations < self.max_iterations:
+            # Manage history size - keep first 4 messages
+            if len(self.history) > self.keep_messages:
+                # First four messages are important and we need to keep them
+                keep_from_end = self.keep_messages - 4
+                self.history = self.history[:4] + Summarizer().summarize_conversation(self.history[4:-keep_from_end]) + self.history[-keep_from_end:]
+                
+            # Send the request to the LLM
+            plan_tokens = count_tokens(self.history)
+            logger.info(f"Total tokens used till now: {count_tokens('placeholder'):,}, current query tokens: {plan_tokens:,}", color='red')
+
+            llm_response = self.llm.reason(self.history)
+            self.history.append({"role": "assistant", "content": llm_response})
+            logger.info(f"{llm_response}", color='light_blue')
+
+            # Extract and execute the tool use from the LLM response
+            tool_use = self.tools.extract_tool_use(llm_response)
+            logger.info(f"{tool_use}", color='yellow')
+
+            tool_output = str(self.tools.execute_tool(page, tool_use))
+            logger.info(f"{tool_output[:250]}{'...' if len(tool_output) > 250 else ''}", color='yellow')
+            
+            tool_output_summarized = Summarizer().summarize(llm_response, tool_use, tool_output)
+            self.history.append({"role": "user", "content": tool_output_summarized})
+            logger.info(f"{tool_output_summarized}", color='cyan')       
+
+            if tool_output == "Completed":
+                successful_exploit, report = self.reporter.report(self.history[2:])
+                logger.info(f"Analysis of the issue the agent has found: {report}", color='green')
+                
+                if successful_exploit:
+                    logger.info("Completed, moving onto the next plan!", color='yellow')
+                    result_summary = f"SUCCESS: {plan['title']} - {report[:200]}..."
+                    break
+                else:
+                    logger.info("Need to work harder on the exploit.", color='red')
+                    self.history.append({"role": "user", "content": report + "\n. Lets do better, again!"})
+                    result_summary = f"ATTEMPTED: {plan['title']} - No exploit found"
+            
+            # Print traffic
+            wait_for_network_idle(page)
+            traffic = self.proxy.pretty_print_traffic()
+            if traffic:
+                logger.info(traffic, color='cyan')
+                self.history.append({"role": "user", "content": traffic})
+                
+            # Clear proxy
+            self.proxy.clear()
+
+            # Continue
+            iterations += 1
+            if iterations >= self.max_iterations:
+                logger.info("Max iterations reached, moving onto the next plan!", color='red')
+                result_summary = f"TIMEOUT: {plan['title']} - Max iterations reached"
+                break
+        
+        return result_summary

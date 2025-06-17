@@ -2,7 +2,7 @@ import argparse
 import os
 from agent import Agent
 
-def print_banner():
+def main():
     banner = """
     ╔══════════════════════════════════════════════════════════════════════╗
     ║                                                                      ║
@@ -19,9 +19,7 @@ def print_banner():
     ║                                                                      ║
     ╚══════════════════════════════════════════════════════════════════════╝
     """
-    print(banner)
-
-def parse_args():
+    
     parser = argparse.ArgumentParser(
         description='AI-Powered Web Application Security Testing Agent',
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -64,7 +62,7 @@ Examples:
     parser.add_argument('-m', '--model',
                         choices=['o3-mini', 'o1-preview', 'o4-mini'],
                         default='o4-mini',
-                        help='LLM model to use (default: o3-mini)')
+                        help='LLM model to use (default: o4-mini)')
     
     parser.add_argument('-o', '--output',
                         default='security_results',
@@ -80,33 +78,53 @@ Examples:
                         default=10,
                         help='Number of security testing plans to generate per page. Use -1 for unlimited plans (15-25+ comprehensive tests with contextual CVE intelligence). Default: 10')
 
+    parser.add_argument('--disable-baseline-checks', 
+                        action='store_true', 
+                        help='Disable OWASP Top 10 baseline security checks')
+    
+    parser.add_argument('--max-plans', 
+                        type=int, 
+                        default=None,
+                        help='Maximum number of plans to generate (default: unlimited)')
+
     parser.add_argument('--disable-rag',
                         action='store_true',
                         default=False,
                         help='Disable RAG knowledge fetching for faster startup')
 
     args = parser.parse_args()
-    
-    # Create output directory if it doesn't exist
-    os.makedirs(args.output, exist_ok=True)
-    
-    return args
 
-if __name__ == "__main__":
-    print_banner()
-    args = parse_args()
-    print("\n[*] Starting security scan...")
+    # Validation
+    if not args.url:
+        parser.error("URL is required. Use -u or --url to specify the target URL.")
+    
+    if not args.url.startswith(('http://', 'https://')):
+        parser.error("URL must start with http:// or https://")
+
+    print(banner)
+    
+    print(f"[*] Starting security scan...")
     print(f"[*] Target URL: {args.url}")
     print(f"[*] Using model: {args.model}")
     
     if args.num_plans == -1:
         print(f"[*] Plans per page: Unlimited (15-25+ comprehensive tests with contextual CVE intelligence)")
+    elif args.max_plans:
+        print(f"[*] Plans per page: {args.max_plans}")
     else:
-        print(f"[*] Plans per page: {args.num_plans}")
+        print(f"[*] Plans per page: {args.num_plans} (or dynamic based on page complexity)")
     
     print(f"[*] Max iterations per plan: {args.max_iterations}")
-    print(f"[*] Results will be saved to: {args.output}\n")
+    print(f"[*] Results will be saved to: {args.output}")
     
+    # Check if OpenAI API key is set
+    if not os.getenv('OPENAI_API_KEY'):
+        print("\n[Error] OPENAI_API_KEY environment variable is not set!")
+        print("Please set your OpenAI API key:")
+        print("export OPENAI_API_KEY='your-api-key-here'")
+        return
+    
+    # Create agent with options - combining both parameter sets
     agent = Agent(
         starting_url=args.url,
         expand_scope=args.expand,
@@ -115,6 +133,20 @@ if __name__ == "__main__":
         output_dir=args.output,
         max_iterations=args.max_iterations,
         num_plans=args.num_plans,
+        enable_baseline_checks=not args.disable_baseline_checks,
+        max_plans=args.max_plans,
         disable_rag=args.disable_rag
     )
-    agent.run()
+    
+    # Run the scan
+    try:
+        agent.run()
+        print(f"\n[✅] Scan completed successfully!")
+        print(f"[*] Results saved to: {args.output}")
+    except KeyboardInterrupt:
+        print("\n[*] Scan interrupted by user")
+    except Exception as e:
+        print(f"\n[❌] Scan failed: {e}")
+
+if __name__ == "__main__":
+    main()
