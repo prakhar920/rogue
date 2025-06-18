@@ -30,7 +30,8 @@ class Agent:
                  enumerate_subdomains: bool = False, model: str = 'o3-mini',
                  output_dir: str = 'security_results', max_iterations: int = 10,
                  num_plans: int = 10, disable_rag: bool = False,
-                 enable_baseline_checks: bool = True, max_plans: int = None):
+                 enable_baseline_checks: bool = True, max_plans: int = None,
+                 disable_iterative: bool = False):
         """
         Initialize the security testing agent.
 
@@ -45,6 +46,7 @@ class Agent:
             disable_rag: Whether to disable RAG knowledge fetching (default: False)
             enable_baseline_checks: Whether to always include OWASP Top 10 baseline checks (default: True)
             max_plans: Maximum number of plans to generate (default: None, unlimited)
+            disable_iterative: Whether to disable iterative planning (default: False)
         """
         self.starting_url = starting_url
         self.expand_scope = expand_scope
@@ -57,6 +59,7 @@ class Agent:
         self.max_plans = max_plans if max_plans is not None else num_plans
         self.enable_rag = not disable_rag
         self.keep_messages = 15
+        self.disable_iterative = disable_iterative
 
         # Fetch security knowledge once at initialization (unless disabled)
         if disable_rag:
@@ -165,22 +168,84 @@ class Agent:
                 {"role": "user", "content": page_data}
             ]
             
-            # Add the plan to the history
-            logger.info("Generating a plan for security testing", color='cyan')
-            total_tokens += count_tokens(page_data)
-            
-            # Use traditional single-shot planning
-            plans = self.planner.plan(page_data)
-            
-            # Output the full plan first
-            total_plans = len(plans)
-            for index, plan in enumerate(plans):
-                logger.info(f"Plan {index + 1}/{total_plans}: {plan['title']}", color='light_magenta')
-
-            # Execute all plans
-            for index, plan in enumerate(plans):
-                self._execute_single_plan(plan, page, index + 1, total_plans)
-                total_tokens += count_tokens(self.history[2:])
+            # Choose planning strategy based on disable_iterative flag
+            if self.disable_iterative:
+                # Legacy planning: generate all plans at once
+                logger.info("Generating security plans (legacy mode)", color='cyan')
+                total_tokens += count_tokens(page_data)
+                plans = self.planner.plan(page_data)
+                
+                # Output the full plan first
+                total_plans = len(plans)
+                for index, plan in enumerate(plans):
+                    logger.info(f"Plan {index + 1}/{total_plans}: {plan['title']}", color='light_magenta')
+                
+                # Execute all plans using legacy method
+                for index, plan in enumerate(plans):
+                    self._execute_single_plan(plan, page, index + 1, total_plans)
+                    total_tokens += count_tokens(self.history[2:])
+            else:
+                # Iterative planning: generate plans in batches with learning
+                logger.info("Starting iterative security planning", color='cyan')
+                total_tokens += count_tokens(page_data)
+                
+                # Determine batch size for iterative planning
+                if self.num_plans == -1:
+                    # For unlimited plans, generate in batches of 5
+                    batch_size = 5
+                    max_batches = 5  # Maximum 25 plans total
+                else:
+                    # For fixed plans, divide into 3 batches (33% each)
+                    batch_size = max(1, self.num_plans // 3)
+                    max_batches = 3
+                
+                all_plans = []
+                execution_insights = ""
+                
+                # Execute iterative planning in batches
+                for batch_num in range(max_batches):
+                    logger.info(f"🔄 Batch {batch_num + 1}/{max_batches}: Generating {batch_size} plans with learning", color='cyan')
+                    
+                    # Create context for batch planning
+                    batch_context = page_data
+                    if execution_insights:
+                        batch_context += f"\n\n*** EXECUTION INSIGHTS FROM PREVIOUS BATCHES ***\n{execution_insights}"
+                    
+                    # Generate batch of plans
+                    try:
+                        batch_plans = self.planner.plan_batch(batch_context, batch_size)
+                        if not batch_plans:
+                            logger.info(f"No plans generated for batch {batch_num + 1}, stopping", color='yellow')
+                            break
+                            
+                        all_plans.extend(batch_plans)
+                        
+                        # Display batch plans
+                        for i, plan in enumerate(batch_plans):
+                            plan_num = len(all_plans) - len(batch_plans) + i + 1
+                            logger.info(f"Plan {plan_num}: {plan['title']}", color='light_magenta')
+                        
+                        # Execute batch plans and collect insights
+                        batch_results = []
+                        for i, plan in enumerate(batch_plans):
+                            plan_num = len(all_plans) - len(batch_plans) + i + 1
+                            result = self._execute_single_plan(plan, page, plan_num, len(all_plans))
+                            batch_results.append(result)
+                            total_tokens += count_tokens(self.history[2:])
+                        
+                        # Update execution insights for next batch
+                        insights_summary = f"Batch {batch_num + 1} Results:\n"
+                        for result in batch_results:
+                            insights_summary += f"- {result}\n"
+                        execution_insights += insights_summary + "\n"
+                        
+                        logger.info(f"✅ Batch {batch_num + 1} completed. Moving to next batch with insights.", color='green')
+                        
+                    except Exception as e:
+                        logger.info(f"Error in batch {batch_num + 1}: {e}", color='red')
+                        break
+                
+                logger.info(f"🎯 Iterative planning completed: {len(all_plans)} total plans executed", color='green')
 
         # Generate and save report
         logger.info("Generating summary report", color='yellow')
