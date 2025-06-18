@@ -75,7 +75,7 @@ Examples:
 
     parser.add_argument('-p', '--num-plans',
                         type=int,
-                        default=10,
+                        default=1,
                         help='Number of security testing plans to generate per page. Uses iterative planning: fixed plans are divided into 3 batches (33%% each), unlimited plans (-1) generate 5 plans per batch with adaptive learning. Default: 10')
 
     parser.add_argument('--disable-baseline-checks', 
@@ -89,13 +89,18 @@ Examples:
 
     parser.add_argument('--disable-rag',
                         action='store_true',
-                        default=False,
+                        default=True,
                         help='Disable RAG knowledge fetching for faster startup')
 
     parser.add_argument('--disable-iterative',
                         action='store_true',
                         default=False,
                         help='Disable iterative planning and generate all plans at once (legacy mode)')
+
+    parser.add_argument('--additional-instructions',
+                        type=str,
+                        default='',
+                        help='Additional instructions for the security testing agent')
 
     args = parser.parse_args()
 
@@ -141,7 +146,8 @@ Examples:
         enable_baseline_checks=not args.disable_baseline_checks,
         max_plans=args.max_plans,
         disable_rag=args.disable_rag,
-        disable_iterative=args.disable_iterative
+        disable_iterative=args.disable_iterative,
+        additional_instructions=args.additional_instructions
     )
     
     # Run the scan

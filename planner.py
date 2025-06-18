@@ -42,7 +42,7 @@ class Planner:
     
     def __init__(self, knowledge_summary: Optional[str] = None, 
                  enable_baseline_checks: bool = True, max_plans: int = None,
-                 num_plans_target: int = 10):
+                 num_plans_target: int = 10, additional_instructions: str = ''):
         """
         Initialize the planner.
         
@@ -57,7 +57,7 @@ class Planner:
         self.max_plans = max_plans
         self.num_plans_target = num_plans_target if num_plans_target is not None else (max_plans if max_plans is not None else 10)
         self.knowledge_base = None  # Will be set by agent if RAG enabled
-        
+        self.additional_instructions = additional_instructions
         # Initialize OpenAI client
         openai_api_key = os.getenv('OPENAI_API_KEY')
         if not openai_api_key:
@@ -160,7 +160,10 @@ class Planner:
           description: "Detailed description of what to test and methodology..."
         ```
 
-        Focus on plans that are most likely to yield high-impact vulnerabilities given the page content and functionality observed."""
+        Focus on plans that are most likely to yield high-impact vulnerabilities given the page content and functionality observed.
+
+        {self.additional_instructions}
+        """
 
     def _assess_page_complexity(self, page_data: str) -> int:
         """
@@ -248,6 +251,7 @@ class Planner:
         - title: "Specific Plan Title"
           description: "Detailed context-specific methodology..."
         ```
+        {self.additional_instructions}
         """
         
         try:
@@ -363,6 +367,8 @@ class Planner:
         2. Build upon successful techniques with variations
         3. Focus on areas that haven't been thoroughly tested yet
         4. Consider chaining attacks based on discovered vulnerabilities
+
+        {self.additional_instructions}
         
         Ensure each plan is distinct and targets different attack vectors or methodologies."""
         

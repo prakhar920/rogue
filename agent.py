@@ -28,10 +28,10 @@ class Agent:
 
     def __init__(self, starting_url: str, expand_scope: bool = False, 
                  enumerate_subdomains: bool = False, model: str = 'o3-mini',
-                 output_dir: str = 'security_results', max_iterations: int = 10,
-                 num_plans: int = 10, disable_rag: bool = False,
+                 output_dir: str = 'security_results', max_iterations: int = 25,
+                 num_plans: int = 1, disable_rag: bool = False,
                  enable_baseline_checks: bool = True, max_plans: int = None,
-                 disable_iterative: bool = False):
+                 disable_iterative: bool = False, additional_instructions: str = ''):
         """
         Initialize the security testing agent.
 
@@ -60,6 +60,7 @@ class Agent:
         self.enable_rag = not disable_rag
         self.keep_messages = 15
         self.disable_iterative = disable_iterative
+        self.additional_instructions = additional_instructions
 
         # Fetch security knowledge once at initialization (unless disabled)
         if disable_rag:
@@ -82,7 +83,8 @@ class Agent:
         self.planner = Planner(num_plans_target=self.max_plans, 
                               knowledge_summary=knowledge_summary,
                               enable_baseline_checks=enable_baseline_checks,
-                              max_plans=self.max_plans)
+                              max_plans=self.max_plans,
+                              additional_instructions=self.additional_instructions)
         
         # Pass knowledge base to planner if RAG is enabled
         if self.enable_rag and self.knowledge_base is not None:
@@ -165,6 +167,7 @@ class Agent:
             # Initialize history with system prompt and page data
             self.history = [
                 {"role": "system", "content": self.llm.system_prompt},
+                {"role": "user", "content": self.additional_instructions},
                 {"role": "user", "content": page_data}
             ]
             
