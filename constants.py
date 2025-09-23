@@ -1,9 +1,11 @@
+# constants.py
 import os
-from dotenv import load_dotenv
 
-# Load environment variables from .env file if it exists
-load_dotenv()
+DEMO_MODE = os.getenv("DEMO_MODE", "").lower() in ("1", "true", "yes")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
-if not OPENAI_API_KEY:
-    raise ValueError("OpenAI API key not found. Please set the OPENAI_API_KEY environment variable or create a .env file with OPENAI_API_KEY=your-key-here.")
+# Only require a real API key when not in demo mode
+if not OPENAI_API_KEY and not DEMO_MODE:
+    raise ValueError(
+        "OpenAI API key not found. Please set the OPENAI_API_KEY environment variable or create a .env file with OPENAI_API_KEY=your-key-here."
+    )
