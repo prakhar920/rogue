@@ -8,3 +8,6 @@ Requests==2.32.3
 tiktoken
 lxml
 python-dotenv
+google-generativeai
+streamlit
+fpdf2

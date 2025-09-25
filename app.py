@@ -5,111 +5,138 @@ import shlex
 import os
 import time
 from pathlib import Path
+from fpdf import FPDF
 
-st.set_page_config(page_title="Rogue UI", layout="centered")
-st.title("Rogue - Web Vulnerability Scanner")
+# --- Helper function to create PDF ---
+def create_pdf_from_text(text: str) -> bytes:
+    """Creates a PDF file in memory from a string of text."""
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Helvetica", size=11)
+    # Use multi_cell to automatically handle line breaks
+    # We need to encode the text to latin-1 for FPDF compatibility with special characters
+    pdf.multi_cell(0, 5, text.encode('latin-1', 'replace').decode('latin-1'))
+    # FIX: Explicitly convert the bytearray from .output() to bytes for Streamlit
+    return bytes(pdf.output())
 
-# --- Inputs ---
-url = st.text_input("Target URL", "http://testphp.vulnweb.com")
-plans = st.number_input("Plans per page (-p)", min_value=1, max_value=50, value=1, step=1)
-iterations = st.number_input("Max iterations (-i)", min_value=1, max_value=20, value=1, step=1)
-model = st.selectbox("Model (-m)", ["o4-mini", "o3-mini", "o1-preview"], index=0)
-expand = st.checkbox("Expand discovered URLs (-e)", value=False)
-subdomains = st.checkbox("Enumerate subdomains (-s)", value=False)
-output_dir = st.text_input("Output directory (-o)", "security_results")
-demo_mode = st.checkbox("DEMO_MODE (no OpenAI API calls)", value=True)
-timeout_seconds = st.number_input("Timeout (seconds)", min_value=30, max_value=1800, value=300)
+# --- Page Configuration ---
+st.set_page_config(page_title="Rogue UI", layout="wide", initial_sidebar_state="expanded")
+st.title("Rogue - AI-Powered Web Vulnerability Scanner")
+st.markdown("An intelligent web vulnerability scanner agent powered by Large Language Models.")
 
-run_button = st.button("🚀 Start Scan")
+# --- Sidebar for Scan Configuration ---
+with st.sidebar:
+    st.header("Scan Configuration")
+    
+    url = st.text_input("Target URL", "http://testphp.vulnweb.com", help="The full URL to start the scan from.")
+    
+    model = st.selectbox(
+        "LLM Model (-m)", 
+        ["o4-mini", "gemini-1.5-flash", "gemini-1.5-pro", "o3-mini"], 
+        index=0,
+        help="Select the AI model. Gemini models require a GEMINI_API_KEY."
+    )
 
-def run_and_stream(cmd, placeholder, timeout):
-    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, universal_newlines=True)
-    out_lines = []
-    start = time.time()
-    try:
-        while True:
-            line = process.stdout.readline()
-            if line:
-                out_lines.append(line.rstrip())
-                if len(out_lines) > 800:
-                    out_lines = out_lines[-800:]
-                # show the last ~300 lines to the UI
-                placeholder.code("\n".join(out_lines[-300:]))
-            elif process.poll() is not None:
-                break
-            if time.time() - start > timeout:
-                try:
-                    process.kill()
-                except:
-                    pass
-                out_lines.append(f"[!] KILLED after timeout {timeout}s")
-                placeholder.code("\n".join(out_lines[-300:]))
-                return process.returncode or -1, "\n".join(out_lines)
-        return process.returncode, "\n".join(out_lines)
-    except Exception as e:
-        try:
+    col1, col2 = st.columns(2)
+    with col1:
+        plans = st.number_input("Plans/Page (-p)", min_value=-1, value=3, step=1, help="-1 for unlimited plans.")
+    with col2:
+        iterations = st.number_input("Max Iterations (-i)", min_value=1, value=5, step=1, help="Max steps per plan.")
+
+    st.subheader("Scope & Discovery")
+    expand = st.checkbox("Expand Discovered URLs (-e)", value=False)
+    subdomains = st.checkbox("Enumerate Subdomains (-s)", value=False)
+    
+    st.subheader("Advanced")
+    output_dir = st.text_input("Output Directory (-o)", "security_results")
+    timeout_seconds = st.number_input("Timeout (seconds)", min_value=60, value=600)
+    demo_mode = st.checkbox("DEMO MODE (no API calls)", value=False, help="Uses placeholder data instead of calling LLM APIs.")
+    
+    run_button = st.button("🚀 Start Scan", use_container_width=True)
+
+# --- Main Panel for Output and Reports ---
+st.header("Scan Output")
+placeholder = st.empty()
+placeholder.code("Scan output will appear here in real-time...")
+
+def run_and_stream(cmd, timeout):
+    """Executes a command and streams its output to the Streamlit UI."""
+    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+    output_lines = []
+    start_time = time.time()
+    
+    while True:
+        line = process.stdout.readline()
+        if line:
+            output_lines.append(line.strip())
+            # Display the last 50 lines to keep the UI snappy
+            placeholder.code("\n".join(output_lines[-50:]))
+        
+        # Check for process completion
+        if process.poll() is not None and not line:
+            break
+            
+        # Check for timeout
+        if time.time() - start_time > timeout:
             process.kill()
-        except:
-            pass
-        out_lines.append(f"[!] Exception: {e}")
-        placeholder.code("\n".join(out_lines[-300:]))
-        return -2, "\n".join(out_lines)
+            output_lines.append(f"\n[!] TIMEOUT: Process terminated after {timeout} seconds.")
+            placeholder.code("\n".join(output_lines[-50:]))
+            return -1, "\n".join(output_lines)
+            
+    return process.returncode, "\n".join(output_lines)
 
 if run_button:
-    # ensure demo mode env var is set for the process
+    # Set environment variable for demo mode
     if demo_mode:
         os.environ["DEMO_MODE"] = "1"
+    elif "DEMO_MODE" in os.environ:
+        del os.environ["DEMO_MODE"]
+
+    # Construct the command
+    cmd = ["python", "run.py", "-u", url, "-m", model, "-p", str(plans), "-i", str(iterations), "-o", output_dir]
+    if expand: cmd.append("-e")
+    if subdomains: cmd.append("-s")
+
+    st.info(f"Executing command: `{' '.join(shlex.quote(c) for c in cmd)}`")
+    
+    return_code, full_output = run_and_stream(cmd, int(timeout_seconds))
+
+    if return_code == 0:
+        st.success("✅ Scan completed successfully.")
     else:
-        os.environ.pop("DEMO_MODE", None)
+        st.error(f"❌ Scan failed or was terminated (Exit Code: {return_code}). Check the output above for details.")
 
-    # If constants.py still requires OPENAI_API_KEY at import time, set a dummy one to avoid import errors
-    if "OPENAI_API_KEY" not in os.environ:
-        os.environ["OPENAI_API_KEY"] = "demo-key"
-
-    st.info(f"Starting scan for: {url}")
-    placeholder = st.empty()
-
-    cmd = ["python", "run.py", "-u", url, "-p", str(plans), "-i", str(iterations), "-m", model, "-o", output_dir]
-    if expand:
-        cmd.append("-e")
-    if subdomains:
-        cmd.append("-s")
-
-    st.write("Command:", " ".join(shlex.quote(x) for x in cmd))
-    returncode, stdout_all = run_and_stream(cmd, placeholder, int(timeout_seconds))
-
-    if returncode == 0:
-        st.success("✅ Scan completed (process exit 0).")
-    elif returncode > 0:
-        st.warning(f"⚠️ Scan finished with return code {returncode}. Check logs above.")
+# --- Display Reports ---
+st.header("📂 Scan Reports")
+output_path = Path(output_dir)
+if output_path.exists() and output_path.is_dir():
+    report_files = sorted(
+        [f for f in output_path.rglob('*') if f.is_file() and f.suffix.lower() in ('.md', '.txt', '.json')],
+        key=lambda f: f.stat().st_mtime, 
+        reverse=True
+    )
+    
+    if not report_files:
+        st.write("No report files found in the output directory yet.")
     else:
-        st.error(f"❌ Scan failed with return code {returncode}.")
-
-   # safe file listing / preview (replace the existing block)
-outp = Path(output_dir)
-if outp.exists():
-    files = sorted(list(outp.rglob("*")), key=lambda f: f.stat().st_mtime, reverse=True)
-    if files:
-        st.markdown("### 📂 Generated files (most recent first)")
-        for f in files[:50]:
-            try:
-                display_path = f.relative_to(Path.cwd())
-            except Exception:
-                display_path = f  # fallback to absolute path
-            st.write(f"- {display_path} — {f.stat().st_size} bytes")
-        # preview the most recent .md or .txt
-        recent = next((f for f in files if f.suffix.lower() in (".md", ".txt")), None)
-        if recent:
-            try:
-                st.markdown("---")
-                st.write(f"### Preview of `{recent.name}`")
-                st.code(recent.read_text(encoding="utf-8")[:20000])
-                with open(recent, "rb") as fh:
-                    st.download_button("Download latest report", fh.read(), file_name=recent.name)
-            except Exception as e:
-                st.write("Could not preview file:", e)
-    else:
-        st.write("No files produced in output directory yet.")
+        latest_report = report_files[0]
+        st.subheader(f"Preview of Latest Report: `{latest_report.name}`")
+        
+        try:
+            report_content = latest_report.read_text(encoding='utf-8')
+            st.markdown(f"```\n{report_content[:5000]}\n```") # Preview first 5000 chars
+            
+            # --- PDF Download Button Logic ---
+            pdf_bytes = create_pdf_from_text(report_content)
+            pdf_filename = Path(latest_report.name).with_suffix('.pdf').name
+            
+            st.download_button(
+                label=f"Download {pdf_filename}",
+                data=pdf_bytes,
+                file_name=pdf_filename,
+                mime='application/pdf'
+            )
+        except Exception as e:
+            st.error(f"Could not read or convert report file: {e}")
 else:
-    st.write("Output directory does not exist:", output_dir)
-
+    st.write("Output directory does not exist yet. Run a scan to generate reports.")
