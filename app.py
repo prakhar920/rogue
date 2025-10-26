@@ -2,14 +2,10 @@
 import streamlit as st
 import subprocess
 import shlex
-import os  # <-- ADDED THIS IMPORT
+import os
 import time
 from pathlib import Path
 from fpdf import FPDF
-
-# --- ADDED THIS LINE TO INSTALL PLAYWRIGHT'S BROWSERS ---
-os.system("playwright install")
-# ---------------------------------------------------------
 
 # --- Helper function to create PDF ---
 def create_pdf_from_text(text: str) -> bytes:
@@ -125,47 +121,41 @@ if run_button:
     if return_code == 0:
         st.success("✅ Scan completed successfully.")
     else:
-        st.error(f"❌ Scan failed or was terminated (Exit Code: 1). Check the output above for details.")
+        st.error(f"❌ Scan failed or was terminated (Exit Code: {return_code}). Check the output above for details.")
 
 # --- Display Reports ---
 st.header("📂 Scan Reports")
 output_path = Path(output_dir)
-if not output_path.exists() or not output_path.is_dir():
+if output_path.exists() and output_path.is_dir():
+    report_files = sorted(
+        [f for f in output_path.rglob('*') if f.is_file() and f.suffix.lower() in ('.md', '.txt', '.json')],
+        key=lambda f: f.stat().st_mtime, 
+        reverse=True
+    )
+    
+if not report_files:
     st.write("No report files found in the output directory yet.")
 else:
-    try:
-        report_files = sorted(
-            [f for f in output_path.rglob('*') if f.is_file() and f.suffix.lower() in ('.md', '.txt', '.json')],
-            key=lambda f: f.stat().st_mtime, 
-            reverse=True
-        )
-    except Exception as e:
-        st.error(f"Error scanning report directory: {e}")
-        report_files = []
+    latest_report = report_files[0]
+    st.subheader(f"Preview of Latest Report: `{latest_report.name}`")
     
-    if not report_files:
-        st.write("No report files found in the output directory yet.")
-    else:
-        latest_report = report_files[0]
-        st.subheader(f"Preview of Latest Report: `{latest_report.name}`")
-        
-        try:
-            report_content = latest_report.read_text(encoding='utf-8')
+    try:
+        report_content = latest_report.read_text(encoding='utf-8')
 
-            # --- Display report content nicely in Streamlit ---
-            st.markdown("### 🧾 Report Content Preview")
-            st.code(report_content[:5000], language="markdown")  # limit preview to avoid UI lag
+        # --- Display report content nicely in Streamlit ---
+        st.markdown("### 🧾 Report Content Preview")
+        st.code(report_content[:5000], language="markdown")  # limit preview to avoid UI lag
 
-            # --- PDF Download Button Logic ---
-            pdf_bytes = create_pdf_from_text(report_content)
-            pdf_filename = Path(latest_report.name).with_suffix('.pdf').name
+        # --- PDF Download Button Logic ---
+        pdf_bytes = create_pdf_from_text(report_content)
+        pdf_filename = Path(latest_report.name).with_suffix('.pdf').name
 
-            st.download_button(
-                label=f"📄 Download {pdf_filename}",
-                data=pdf_bytes,
-                file_name=pdf_filename,
-                mime='application/pdf'
-            )
+        st.download_button(
+            label=f"📄 Download {pdf_filename}",
+            data=pdf_bytes,
+            file_name=pdf_filename,
+            mime='application/pdf'
+        )
 
-        except Exception as e:
-            st.error(f"Could not read or convert report file: {e}")
+    except Exception as e:
+        st.error(f"Could not read or convert report file: {e}")
