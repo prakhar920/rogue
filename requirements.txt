@@ -1,6 +1,5 @@
 anthropic
 beautifulsoup4
-colorama==0.4.6
 openai
 playwright
 PyYAML==6.0.2
