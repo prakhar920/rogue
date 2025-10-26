@@ -13,15 +13,14 @@ def create_pdf_from_text(text: str) -> bytes:
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Helvetica", size=11)
-    # Use multi_cell to automatically handle line breaks
     # We need to encode the text to latin-1 for FPDF compatibility with special characters
     pdf.multi_cell(0, 5, text.encode('latin-1', 'replace').decode('latin-1'))
-    # FIX: Explicitly convert the bytearray from .output() to bytes for Streamlit
+    # Explicitly convert the bytearray from .output() to bytes for Streamlit
     return bytes(pdf.output())
 
 # --- Page Configuration ---
 st.set_page_config(page_title="Rogue UI", layout="wide", initial_sidebar_state="expanded")
-st.title("Rogue - AI-Powered Web Vulnerability Scanner")
+st.title("🎯 Rogue - AI-Powered Web Vulnerability Scanner")
 st.markdown("An intelligent web vulnerability scanner agent powered by Large Language Models.")
 
 # --- Sidebar for Scan Configuration ---
@@ -61,7 +60,25 @@ placeholder.code("Scan output will appear here in real-time...")
 
 def run_and_stream(cmd, timeout):
     """Executes a command and streams its output to the Streamlit UI."""
-    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+    
+    # --- THIS IS THE FIX ---
+    # Force the subprocess environment to use UTF-8
+    # This stops the banner from crashing on Windows
+    env = os.environ.copy()
+    env["PYTHONUTF8"] = "1"
+    
+    process = subprocess.Popen(
+        cmd, 
+        stdout=subprocess.PIPE, 
+        stderr=subprocess.STDOUT, 
+        text=True, 
+        bufsize=1,
+        encoding='utf-8',  # Force UTF-8 encoding
+        errors='replace',  # Replace any characters that can't be decoded
+        env=env            # Pass the modified environment
+    )
+    # --- END FIX ---
+
     output_lines = []
     start_time = time.time()
     
@@ -116,27 +133,29 @@ if output_path.exists() and output_path.is_dir():
         reverse=True
     )
     
-    if not report_files:
-        st.write("No report files found in the output directory yet.")
-    else:
-        latest_report = report_files[0]
-        st.subheader(f"Preview of Latest Report: `{latest_report.name}`")
-        
-        try:
-            report_content = latest_report.read_text(encoding='utf-8')
-            st.markdown(f"```\n{report_content[:5000]}\n```") # Preview first 5000 chars
-            
-            # --- PDF Download Button Logic ---
-            pdf_bytes = create_pdf_from_text(report_content)
-            pdf_filename = Path(latest_report.name).with_suffix('.pdf').name
-            
-            st.download_button(
-                label=f"Download {pdf_filename}",
-                data=pdf_bytes,
-                file_name=pdf_filename,
-                mime='application/pdf'
-            )
-        except Exception as e:
-            st.error(f"Could not read or convert report file: {e}")
+if not report_files:
+    st.write("No report files found in the output directory yet.")
 else:
-    st.write("Output directory does not exist yet. Run a scan to generate reports.")
+    latest_report = report_files[0]
+    st.subheader(f"Preview of Latest Report: `{latest_report.name}`")
+    
+    try:
+        report_content = latest_report.read_text(encoding='utf-8')
+
+        # --- Display report content nicely in Streamlit ---
+        st.markdown("### 🧾 Report Content Preview")
+        st.code(report_content[:5000], language="markdown")  # limit preview to avoid UI lag
+
+        # --- PDF Download Button Logic ---
+        pdf_bytes = create_pdf_from_text(report_content)
+        pdf_filename = Path(latest_report.name).with_suffix('.pdf').name
+
+        st.download_button(
+            label=f"📄 Download {pdf_filename}",
+            data=pdf_bytes,
+            file_name=pdf_filename,
+            mime='application/pdf'
+        )
+
+    except Exception as e:
+        st.error(f"Could not read or convert report file: {e}")

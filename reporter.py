@@ -1,148 +1,218 @@
+
 import json
-from llm import LLM
+import traceback # Import traceback for better error logging
+from llm import LLM # Make sure correct LLM class is imported
 from pathlib import Path
 
 class Reporter:
     """
-    Security vulnerability reporter that analyzes findings and generates reports.
-    
-    Analyzes conversation history between security testing agent and target system
-    to validate discovered vulnerabilities and generate detailed reports.
+    Analyzes findings using an LLM instance and generates reports.
     """
 
-    def __init__(self, starting_url):
+    # --- THIS IS THE FIX ---
+    # Change __init__ to accept llm_instance and output_dir
+    def __init__(self, starting_url: str, llm_instance: LLM, output_dir: str = 'security_results'):
         """
         Initialize the reporter.
 
         Args:
-            starting_url: Base URL that was tested
+            starting_url: Base URL that was tested.
+            llm_instance: An initialized instance of the LLM class (passed from Agent).
+            output_dir: The directory to save reports in.
         """
-        self.llm = LLM()
-        self.reports = []
+        if not isinstance(llm_instance, LLM):
+             # Make this error more informative
+             raise TypeError(f"Reporter initialization failed: Expected an LLM instance, but got {type(llm_instance)}.")
+
+        self.llm = llm_instance # Use the LLM instance passed from the Agent
+        self.reports = [] # Stores validated reports for the current scan session
         self.starting_url = starting_url
-        self.filename = str(self.starting_url).replace("https://", "").replace("http://", "").replace("/", "_")
+        self.output_dir = Path(output_dir)
 
-    def report(self, history):
+        # Sanitize the URL to create a valid filename, robustly
+        safe_filename = str(self.starting_url)
+        # Replace protocol first
+        safe_filename = safe_filename.replace("https://", "").replace("http://", "")
+        # Replace common problematic characters found in URLs with underscores
+        for char in ['/', ':', '?', '=', '&', '#', '%', '\\', '*', '"', '<', '>', '|', ' ']: # Added space
+             safe_filename = safe_filename.replace(char, "_")
+        # Replace multiple underscores with single one and remove leading/trailing
+        safe_filename = "_".join(filter(None, safe_filename.split('_')))
+        self.filename_base = safe_filename.strip('_')[:150] # Limit length
+
+        # Ensure the output directory exists
+        try:
+            self.output_dir.mkdir(parents=True, exist_ok=True)
+            print(f"[Info] Reporter using output directory: {self.output_dir.resolve()}")
+        except Exception as e:
+             print(f"[Error] Reporter could not create output directory {self.output_dir}: {e}. Using current directory.")
+             self.output_dir = Path(".") # Fallback to current directory
+    # --- END FIX ---
+
+
+    def report(self, history: list) -> tuple[bool, str]:
         """
-        Analyze conversation history to validate if a real vulnerability was found.
-
-        Uses strict criteria to evaluate if the conversation demonstrates a proven,
-        exploitable vulnerability versus theoretical or low-severity issues.
-
-        Args:
-            history: List of conversation messages between agent and system
-
-        Returns:
-            Tuple of (bool, str) indicating if exploit was successful and detailed report
+        Analyze conversation history using the LLM judge to validate if a real vulnerability was found.
+        Returns (bool: success, str: analysis_report from judge)
         """
-        system_prompt = f"""
-        You are a highly critical security vulnerability judge. Your job is to analyze a conversation between a security testing agent and determine if a REAL, WORKING exploit was actually discovered and proven.
+        if not isinstance(history, list):
+            print("[Error] Reporter.report() received invalid history format (expected list).")
+            return False, "[Error] Invalid history format provided to Reporter."
 
-        You must be extremely strict in your assessment. For a vulnerability to be considered valid, the conversation MUST show:
-        1. A clear attack vector that was successfully exploited
-        2. Concrete proof that the exploit worked (e.g. actual sensitive data accessed, actual code execution achieved, authentication bypass, privilege escalation, etc.)
-        3. Specific technical details about how the exploit was performed
-        4. The exact payload/steps that made it work
+        # Define the strict judging prompt
+        system_prompt_judge = """
+        You are an extremely strict security vulnerability judge. Analyze the provided conversation history between a security agent and a target system. Determine if a REAL, HIGH-IMPACT, WORKING exploit was definitively PROVEN based ONLY on the evidence within this history.
 
-        You must REJECT findings that:
-        - Are theoretical or potential vulnerabilities without proof
-        - Only show error messages or unexpected behavior
-        - Lack a working proof-of-concept exploit
-        - Are low severity issues like mixed content, missing headers etc.
-        - Make assumptions about what "could" be possible
-        - Don't have explicit evidence of successful exploitation
+        **VALID EXPLOIT CRITERIA (ALL MUST BE MET):**
+        1.  **Clear Attack Vector:** What specific input, parameter, or action was manipulated?
+        2.  **Concrete Proof of Success:** Did the agent *actually* retrieve sensitive data (e.g., user passwords, database content - not just table names)? Did the agent *actually* execute a command or achieve unauthorized access (e.g., showing output from `id` or `whoami`, accessing an admin page)? Show the specific part of the history as evidence.
+        3.  **Exact Payload/Steps:** What precise input (`<script>...`, `' OR 1=1--`) or sequence of tool actions led to the successful exploit?
+        4.  **High Impact:** Is this significantly more than just an error message, verbose output (like stack traces or version numbers), missing security headers (like X-Frame-Options), theoretical possibilities ("could lead to...", "might allow..."), or self-inflicted issues (self-XSS)? Would this realistically justify a significant bug bounty payout (think >$500)?
 
-        If and ONLY if you see clear evidence of a working exploit, create a brief report with:
-        - Description of the proven vulnerability
-        - The exact endpoint/component affected
-        - The specific payload/steps that worked
-        - Evidence showing successful exploitation
-        
-        For instance, if we have found a CSRF issue, is the endpoint actually an authentication endpoint? Is it sensitive? Similarly, if we have found an XSS issue, can the user really control that input? If there is a js engine inside the page and we can get an alert, that's not an issue at all. Vulnerabilities are rare, so you need to be extremely strict in your examination.
+        **IMMEDIATELY REJECT if:**
+        * The finding is theoretical or potential, lacking concrete proof from the history.
+        * Only error messages, unexpected behavior, or configuration information (like directory listings without file access) are shown.
+        * The agent *claims* success but provides no verifiable output from the target system confirming it.
+        * It's a low-severity finding (e.g., missing informational headers, self-XSS, version disclosure, clickjacking on a static page).
+        * The proof relies on assumptions or external knowledge not present in the provided history.
 
-        A good criteria you can use is that if we submit it to hackerone, do we get a bounty of more than $1000? If so, it's probably a valid issue. But you rarely get that, right?!
-
-        Remember: Your job is to eliminate false positives. Be extremely skeptical and demanding of proof.
-        """
-
-        system_prompt = [{"role": "system", "content": system_prompt}]
-        history.append({"role": "user", "content": "Please analyze our conversation history and determine if any vulnerabilities were definitively proven with working exploits, or if the agent was just working lazily and stopped prematurely."})
-        report = self.llm.reason(system_prompt + history)
-
-        successful_exploit = self.parse_report(report)
-
-        # Save reports as they are generated
-        if successful_exploit:
-            self.reports.append(report)
-            self.save_reports()
-        
-        return successful_exploit, report
-
-    def parse_report(self, report):
-        """
-        Parse a vulnerability report to determine if exploit was successful.
-
-        Args:
-            report: String containing the vulnerability report
-
-        Returns:
-            bool indicating if report demonstrates successful exploit
-        """
-        system_prompt = f"""
-        You are a report parser whose task is to look at a report and its evaluation and return a boolean value indicating whether the report resulted in a successful exploit or not.
-
-        Only return 1 word, either "yes" if the report resulted in a successful exploit or "no" if it did not.
+        **OUTPUT FORMAT:**
+        * **If a VALID, high-impact exploit is found:** Provide a concise report starting EXACTLY with "VALID EXPLOIT:". Include:
+            * `Vulnerability:` [Type, e.g., Authenticated Remote Code Execution]
+            * `Endpoint:` [Affected URL/parameter]
+            * `Payload/Steps:` [Exact input/actions]
+            * `Evidence:` [Quote or describe the specific output from the history proving success]
+            * `Impact:` [Briefly state the consequence, e.g., Gained shell access as www-data]
+        * **If NO VALID, high-impact exploit is found:** Start EXACTLY with "NO VALID EXPLOIT:". State clearly why it was rejected based on the criteria (e.g., "Lacked concrete proof of data retrieval," "Only showed a generic error message," "Low severity finding - missing header").
         """
 
-        system_prompt = [{"role": "system", "content": system_prompt}]
-        response = self.llm.reason(system_prompt + [{"role": "user", "content": report}])
-        response = str(response)
-        return "yes" in response
+        # Prepare messages for the judge LLM call
+        messages_judge = [{"role": "system", "content": system_prompt_judge}]
+        # Add history, ensuring it's not excessively long (optional truncation might be needed)
+        messages_judge.extend(history[-self.llm.keep_messages:] if hasattr(self.llm, 'keep_messages') else history) # Limit history if needed
+        messages_judge.append({"role": "user", "content": "Analyze the preceding conversation history strictly based on the criteria. Was a high-impact exploit proven? Start your response with 'VALID EXPLOIT:' or 'NO VALID EXPLOIT:'."})
+
+        successful_exploit = False # Default to False
+        analysis_report = "[Error] Analysis not performed." # Default report
+
+        try:
+            # print("[Debug] Reporter calling LLM judge...") # Optional debug
+            analysis_report = self.llm.reason(messages_judge)
+            # print(f"[Debug] Reporter received judge analysis: {analysis_report[:150]}...") # Optional debug
+
+            # Check if the reason() method itself returned an error
+            if analysis_report.startswith("[Error]"):
+                 print(f"[Error] Reporter received error directly from LLM during validation: {analysis_report}")
+                 # successful_exploit remains False
+
+            # --- PARSE THE JUDGE'S DECISION ---
+            # Check if the judge's report explicitly starts with "VALID EXPLOIT:"
+            elif analysis_report.strip().startswith("VALID EXPLOIT:"):
+                 successful_exploit = True
+                 print(f"[Info] Reporter JUDGE VALIDATED an exploit: {analysis_report[:100]}...")
+                 self.reports.append(analysis_report) # Add the detailed judge report
+                 self.save_reports() # Save immediately after validation
+            else:
+                 # Assume any other response means no valid exploit was found
+                 successful_exploit = False
+                 print(f"[Info] Reporter judge DID NOT validate exploit: {analysis_report[:100]}...") # Log rejection reason
+
+        except Exception as e:
+            # Catch errors during the LLM call or processing
+            print(f"[Error] Reporter failed during report analysis: {e}")
+            traceback.print_exc() # Print full traceback for debugging
+            successful_exploit = False
+            analysis_report = f"[Error] Reporter encountered an exception during analysis: {e}"
+
+        # Return the boolean success status and the full analysis text from the judge
+        return successful_exploit, analysis_report
+
+
+    # Remove the separate parse_report function as parsing is now integrated above
+
 
     def save_reports(self):
-        """Save all vulnerability reports to a text file."""
-        report_path = Path("security_results") / f"{self.filename}.txt"
-        with open(report_path, "w") as f:
-            f.write("\n\n-------\n\n".join(self.reports))
+        """Save all successful vulnerability reports found SO FAR to a text file."""
+        if not self.reports: # Don't save if there are no reports yet
+            # print("[Debug] No validated reports to save yet.") # Optional debug
+            return
+
+        report_path = self.output_dir / f"{self.filename_base}.txt"
+        try:
+            # Write all collected VALIDATED reports (overwrites previous file for this run)
+            with open(report_path, "w", encoding='utf-8') as f:
+                f.write("\n\n------ VULNERABILITY REPORT ------\n\n".join(self.reports))
+            print(f"[Info] Saved {len(self.reports)} validated report(s) to: {report_path}")
+        except Exception as e:
+            print(f"[Error] Failed to save report file {report_path}: {e}")
+
 
     def generate_summary_report(self):
         """
-        Generate a comprehensive markdown summary of all findings.
-        
-        Reads all previously saved reports and creates a well-formatted markdown
-        document summarizing the vulnerabilities found, their severity, and
-        technical details.
+        Generate a comprehensive markdown summary based on the collected validated reports.
+        This should be called ONCE at the end of the entire scan.
         """
-        # Load all reports from file
+        print("[Info] Attempting to generate final summary report...")
+        # Use the reports collected in self.reports during the scan
+        if not self.reports:
+            report_content = "No validated vulnerabilities were found or reported during this scan session."
+            print("[Info] No validated reports collected during this session to summarize.")
+        else:
+            # Combine all validated reports for the summary LLM
+            report_content = "\n\n------ VULNERABILITY REPORT ------\n\n".join(self.reports)
+            print(f"[Info] Summarizing {len(self.reports)} validated report(s).")
+
+
+        system_prompt_summarizer = """
+        You are a security report summarizer. You will be given a block of text containing one or more previously validated vulnerability reports. Create a single, comprehensive, professional markdown summary document.
+
+        **Structure:**
+        1.  **Executive Summary:** Briefly state the overall security posture based on the findings (e.g., "Critical vulnerabilities found," "No high-impact issues identified"). Mention the number of validated findings.
+        2.  **Table of Contents (Optional):** If multiple vulnerabilities are present, list them with links (e.g., `[SQL Injection](#sql-injection)`).
+        3.  **Detailed Findings:** For EACH validated vulnerability reported in the input:
+            * Create a clear heading (e.g., `## SQL Injection Authentication Bypass`). Use the vulnerability type from the input report for the heading ID (e.g., `{#sql-injection-authentication-bypass}`).
+            * **Severity:** Estimate (e.g., Critical, High, Medium, Low) based on the impact described.
+            * **Endpoint/Component:** Extract from the input report.
+            * **Description:** Briefly explain the vulnerability based on the input report.
+            * **Payload/Steps:** Extract the exact payload or steps from the input report and place them in a markdown code block (```).
+            * **Evidence:** Briefly summarize or quote the evidence from the input report.
+            * **Impact:** Extract or infer the potential impact from the input report.
+            * **Recommendation:** Provide a general recommendation (e.g., "Implement parameterized queries," "Validate user input," "Apply proper access controls").
+
+        **Important:**
+        * Only include information from the VALIDATED reports provided in the input.
+        * If the input states "No validated vulnerabilities...", reflect that accurately in the executive summary and omit the detailed findings section.
+        * Use clear markdown formatting (headings, code blocks, bullet points).
+        * Be concise and professional.
+        """
+
+        messages_summarizer = [
+            {"role": "system", "content": system_prompt_summarizer},
+            {"role": "user", "content": f"Please summarize the following validated vulnerability reports:\n\n{report_content}"}
+        ]
+
+        summary_content_to_write = "[Error] Summary generation failed." # Default
         try:
-            report_path = Path("security_results") / f"{self.filename}.txt"
-            with open(report_path, "r") as f:
-                report_content = f.read()
-        except FileNotFoundError:
-            report_content = "No vulns were reported."
+            summary = self.llm.reason(messages_summarizer)
+            # Check if the reason() method itself returned an error
+            if summary.startswith("[Error]"):
+                 print(f"[Error] Summary generation failed by LLM: {summary}")
+                 summary_content_to_write = f"# Report Summary Generation Failed\n\nLLM Error: {summary}"
+            else:
+                 summary_content_to_write = summary
+                 print("[Info] Summary report content generated.")
 
-        system_prompt = f"""
-        You are a security report summarizer. Your task is to analyze the security findings and create a comprehensive markdown summary report.
+        except Exception as e:
+             print(f"[Error] Exception during summary generation LLM call: {e}")
+             traceback.print_exc() # Log full traceback
+             summary_content_to_write = f"# Report Summary Generation Failed\n\nException: {e}"
 
-        For each vulnerability found:
-        1. Provide a clear description of the vulnerability and its severity
-        2. Detail the affected endpoint/component
-        3. Include the exact payload/steps that were used to exploit it
-        4. Document the proof/evidence that confirmed successful exploitation
-        5. Explain potential impact and recommendations
+        # --- Save the Summary Report ---
+        summary_path = self.output_dir / f"{self.filename_base}_summary.md"
+        try:
+            with open(summary_path, "w", encoding='utf-8') as f:
+                f.write(summary_content_to_write)
+            print(f"[Info] Saved final summary report to: {summary_path}")
+        except Exception as e:
+             print(f"[Error] Failed to save final summary report to {summary_path}: {e}")
 
-        Format the output as a proper markdown document with:
-        - Executive summary at the top
-        - Table of contents
-        - Detailed findings in separate sections
-        - Technical details in code blocks
-        - Clear headings and structure
-        
-        Focus on proven vulnerabilities with concrete evidence. Exclude theoretical or unproven issues.
-        """
-
-        system_prompt = [{"role": "system", "content": system_prompt}]
-        summary = self.llm.reason(system_prompt + [{"role": "user", "content": report_content}])
-        # Save markdown summary report
-        with open(f"security_results/{self.filename}_summary.md", "w") as f:
-            f.write(summary)

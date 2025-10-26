@@ -1,6 +1,7 @@
+# tools.py
 import sys
 from io import StringIO
-from llm import LLM
+from llm import LLM # Import LLM
 
 
 class Tools:
@@ -9,9 +10,14 @@ class Tools:
     Provides methods for page manipulation, JavaScript execution, and Python code evaluation.
     """
 
-    def __init__(self):
-        """Initialize Tools with LLM instance."""
-        self.llm = LLM()
+    def __init__(self, llm_instance: LLM):
+        """
+        Initialize Tools with an existing LLM instance.
+        
+        Args:
+            llm_instance (LLM): An initialized LLM instance from the Agent.
+        """
+        self.llm = llm_instance
         
     def execute_js(self, page, js_code: str) -> str:
         """Execute JavaScript code on the page.
@@ -175,9 +181,12 @@ class Tools:
             Result of tool execution or error message
         """
         try:
-            return eval("self." + tool_use)
+            # IMPORTANT: We must pass 'page' to eval's local context
+            # so the tool_use string (e.g., "click(page, '#btn')") can find it.
+            local_context = {'self': self, 'page': page}
+            return eval(tool_use, globals(), local_context)
         except Exception as e:
-            return f"Error executing tool: {str(e)}"
+            return f"Error executing tool '{tool_use}': {str(e)}"
 
     def extract_tool_use(self, action: str) -> str:
         """Extract tool command from action description.
@@ -188,45 +197,23 @@ class Tools:
         Returns:
             Tool command to execute
         """
-        prompt = f"""
+        system_prompt = f"""
             You are an agent who is tasked to build a tool use output based on users plan and action. Here are the tools we can generate. You just need to generate the code, we will run it in an eval in a sandboxed environment.
 
             ## Tools
             You are an agent and have access to plenty of tools. In your output, you can basically select what you want to do next by selecting one of the tools below. You must strictly only use the tools listed below. Details are given next.
-
-            - execute_js(js_code)
-                We are working with python's playwright library and you have access to the page object. You can execute javascript code on the page by passing in the javascript code you want to execute. The execute_js function will simply call the page.evaluate function and get the output of your code. 
-                    - Since you are given the request and the response data, if you want to fuzz the API endpoint, you can simply pass in the modified request data and replay the request. Only do this if you are already seeing requests data in some recent conversation.
-                    - Remember: when running page.evaluate, we need to return some variable from the js code instead of doing console logs. Otherwise, we can't access it back in python. The backend for analysis is all python.
-                    - Playwright uses async functions, just remember that. You know how its evaluate function works, so write code accordingly.
-                    - * Important: Our code writing agent often writes very bad code that results in illegal return statements, and other syntax errors around await, async. You should know that we are using playwright.evaluate inside python to evaluate the js code. If you see any errors, fix them before returning the code.
-                        - Error often look like execute_js(page, "return _refreshHome('<img src=x onerror=alert(1)>');")
-                            Error executing tool: Page.evaluate: SyntaxError: Illegal return statemen
-            - click(css_selector)
-                If you want to click on a button or link, you can simply pass in the css selector of the element you want to click on.
-            - fill(css_selector, value)
-                If you want to fill in a form, you can simply pass in the css selector of the element you want to fill in and the value you want to fill in.
+            
+            - execute_js(page, js_code)
+            - click(page, css_selector)
+            - fill(page, css_selector, value)
             - auth_needed()
-                If you are on a page where authentication is needed, simply call this function. We will let the user know to manually authenticate and then we can continue.
             - get_user_input(prompt)
-                If you need to get some input from the user, you can simply call this function. We will let the user know to manually input the data and then we can continue. For instance, if you are looking for a username, password, etc, just call this function and ask the user e.g get_user_input("Enter the username: ")
-            - presskey(key)
-                If you want to press a key, you can simply pass in the key you want to press. This is a playwright function so make sure key works.
-            - submit(css_selector)
-                If you want to submit a form, you can simply pass in the css selector of the element you want to submit.
-            - goto(url)
-                If you want to go to a different url, you can simply pass in the url you want to go to.
-                If you want to go back to the previous page, you can simply call this function.
-            - refresh()
-                If you want to refresh the current page, you can simply call this function.
-            - python_interpreter(code)
-                If you want to run some python code, you can simply pass in the code you want to run. This will be run in a python interpreter and the output will be returned. For instance, if you want to create a new file, run some system commands, whatever you want, you can. We will run it with exec and give you the output so make sure to print stuff in case you need an output.
-                
-                IMPORTANT: You can use python_interpreter in two ways:
-                1. Standalone: python_interpreter('import requests; print("hello")') - for basic HTTP requests
-                2. Browser-aware: python_interpreter('print(current_url); print(len(cookies))', page) - for session-aware requests that need cookies/context
+            - presskey(page, key)
+            - submit(page, css_selector)
+            - goto(page, url)
+            - refresh(page)
+            - python_interpreter(code, page=None)
             - complete()
-                If you think you have explored all possible concerns and avenues and we want to move to some other page, you can simply call this function. This will just take whatever next url we have for analysis and go to it.
 
             ----
 
@@ -238,18 +225,25 @@ class Tools:
             ```
 
             ## Output format:
-            Your output must exactly be a tool use. For most tools, you must pass the first argument as the page object, and the second argument comes from the action given above. However, python_interpreter() is an exception - it only takes the code parameter. For instance:
-
-            execute_js(page, 'fetch("/api/create-job", {{the params and what not go here}})')
+            Your output must exactly be a tool use. 
+            
+            Examples:
+            execute_js(page, 'fetch("/api/create-job", {{ "param": "value" }})')
             goto(page, "https://example.com")
             fill(page, "#username", "admin")
             submit(page, "#login")
-            python_interpreter('import requests; print("Hello")')  # NO page argument!
-            python_interpreter('print(current_url, len(cookies))', page)  # WITH page for browser context!
-            complete() # dont pass in anything
-            auth_needed() # dont pass in anything
+            python_interpreter('import requests; print("Hello")')
+            python_interpreter('print(current_url, len(cookies))', page=page)
+            complete()
+            auth_needed()
 
             We must not return anything else. Remember that your output is going to be eval'd in a sandboxed environment.
             Remember, no prefixes or suffixes, no ```, no ```python, no ```javascript. Start directly with the actual functions and tools that are given above. I will take care of the rest. Make sure the params to the functions are wrapped in quotes or single quotes, not in backticks. We need to respect the syntax of the language.
         """
-        return self.llm.output(prompt)
+        
+        # FIX: Format as messages and use reason()
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": action} # Pass the action as the user message
+        ]
+        return self.llm.reason(messages)

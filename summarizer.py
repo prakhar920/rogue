@@ -1,13 +1,31 @@
+# summarizer.py
 from llm import LLM
-
+from typing import List, Dict # Import typing helpers
 
 class Summarizer:
-    def __init__(self):
-        self.llm = LLM()
+    def __init__(self, llm_instance: LLM):
+        """
+        Initialize the summarizer using an existing LLM instance.
+
+        Args:
+            llm_instance (LLM): An initialized LLM instance from the Agent.
+        """
+        self.llm = llm_instance
+
+    def _call_llm(self, system_prompt: str, user_prompt: str) -> str:
+        """Helper function to format messages and call the LLM."""
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ]
+        # Use the correct reason() method
+        return self.llm.reason(messages)
 
     def summarize(self, llm_response, tool_use, tool_output):
-        prompt = f"""
-        You are a summarizer agent. Your job is to analyze and summarize the following information:
+        system_prompt = "You are a summarizer agent. Your job is to analyze and summarize the provided information."
+        
+        user_prompt = f"""
+        Analyze the following information:
 
         1. LLM Agent Response: This is what the agent was trying to do
         {llm_response}
@@ -30,14 +48,16 @@ class Summarizer:
 
         The summary should be 2 sentences at min, 4 at max. Keep specific/technical details in the summary. If not needed, don't make it long. Succint and to the point.
         """
-        return self.llm.output(prompt)
+        return self._call_llm(system_prompt, user_prompt)
 
-    def summarize_conversation(self, conversation):
+    def summarize_conversation(self, conversation: List[Dict[str, str]]) -> List[Dict[str, str]]:
         # Convert conversation list to string format
         conversation_str = "\n".join([f"{msg['role']}: {msg['content']}" for msg in conversation])
         
-        prompt = f"""
-        You are a summarizer agent. Your job is to summarize the following conversation:
+        system_prompt = "You are a summarizer agent. Your job is to summarize the following conversation."
+        
+        user_prompt = f"""
+        Summarize the following conversation:
 
         {conversation_str}
 
@@ -50,13 +70,15 @@ class Summarizer:
         Keep the summary focused on technical details and actual actions taken. Each bullet point should be 1-2 sentences max. Keep the overall summary short.
         """
 
-        output = self.llm.output(prompt)
-        output = "To reduce context, here is a summary of the previous part of the conversation:\n" + output
-        return [{"role": "user", "content": output}]
+        output = self._call_llm(system_prompt, user_prompt)
+        output_message = "To reduce context, here is a summary of the previous part of the conversation:\n" + output
+        return [{"role": "user", "content": output_message}]
 
-    def summarize_page_source(self, page_source, url):
-        prompt = f"""
-        You are a summarizer agent. Your job is to analyze and summarize the following page source from URL: {url}
+    def summarize_page_source(self, page_source: str, url: str) -> str:
+        system_prompt = "You are a summarizer agent. Your job is to analyze and summarize the provided page source."
+
+        user_prompt = f"""
+        Analyze and summarize the following page source from URL: {url}
 
         {page_source[:200000]}
 
@@ -91,4 +113,4 @@ class Summarizer:
 
         Keep the summary focused and technical. Prioritize elements that are security-relevant or core to the page's functionality.
         """
-        return self.llm.output(prompt)
+        return self._call_llm(system_prompt, user_prompt)
